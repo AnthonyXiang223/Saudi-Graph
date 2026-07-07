@@ -250,11 +250,13 @@ class KnowledgeGraph:
             )
 
         # ---- derived_from edges ------------------------------------------
+        # Direction: derived_indicator → input_indicator
+        # Reads as: "ds10_ds2_precip_diff 派生自 ds10_daily_total"
         for op in self.operators_data.get("operators", []):
             for inp_id in op.get("inputs", []):
                 if self.graph.has_node(inp_id):
                     self.graph.add_edge(
-                        inp_id, op["id"], relationship="derived_from"
+                        op["id"], inp_id, relationship="derived_from"
                     )
 
         # ---- co_occurs_with edges (bidirectional) ------------------------
@@ -512,19 +514,19 @@ class KnowledgeGraph:
                 continue
             visited_indicators.add(current)
 
-            # Walk backward along derived_from
-            predecessors = []
-            for pred in self.graph.predecessors(current):
+            # Walk forward along derived_from (output → input direction)
+            inputs = []
+            for succ in self.graph.successors(current):
                 if self._edge_has_relationship(
-                    self.graph, pred, current, "derived_from"
+                    self.graph, current, succ, "derived_from"
                 ):
-                    predecessors.append(pred)
+                    inputs.append(succ)
 
-            if predecessors:
-                for pred in predecessors:
-                    derived_edges.append((pred, current))
-                    if pred not in visited_indicators:
-                        stack.append(pred)
+            if inputs:
+                for inp in inputs:
+                    derived_edges.append((current, inp))
+                    if inp not in visited_indicators:
+                        stack.append(inp)
             else:
                 # Leaf indicator: follow sourced_from to DataSource
                 for _, ds, d in self.graph.out_edges(current, data=True, keys=False):
