@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>沙特极端事件知识图谱 | MAZU</title>
+<script src="/static/vis-network.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1923; color: #e0e0e0; height: 100vh; display: flex; overflow: hidden; }
+
+/* ── Left panel: narrow ── */
+#panel { width: 340px; min-width: 340px; background: #1a2530; display: flex; flex-direction: column; border-right: 1px solid #2a3a48; transition: width 0.2s; }
+.panel-header { padding: 14px 16px 10px; border-bottom: 1px solid #2a3a48; }
+.panel-header h2 { font-size: 17px; color: #8ab4f8; margin-bottom: 10px; }
+.panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+
+/* ── Detail card when node clicked ── */
+#detail { display: none; }
+#detail.show { display: block; }
+.detail-card { background: #1e2d3d; border-radius: 10px; border: 1px solid #2a3a48; overflow: hidden; }
+.detail-card .head { padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+.detail-card .head .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.detail-card .head .title { font-size: 14px; font-weight: 600; word-break: break-all; }
+.detail-card .meta { padding: 0 14px 12px; font-size: 12px; color: #9ca3af; line-height: 1.6; }
+.detail-card .section { padding: 10px 14px; border-top: 1px solid #2a3a48; }
+.detail-card .section h4 { font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; letter-spacing: 0.5px; }
+.detail-card .section .rel-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 12px; cursor: pointer; border-radius: 4px; padding: 5px 8px; margin: 2px 0; }
+.detail-card .section .rel-item:hover { background: #2a3a58; }
+.detail-card .section .rel-item .rdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.detail-card .section .rel-item .arrow { color: #6b7280; font-size: 10px; margin: 0 2px; }
+.detail-card .dag-box { font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; padding: 10px; margin-top: 4px; background: #0f1923; border-radius: 6px; overflow-x: auto; white-space: pre; color: #8ab4f8; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 500; margin: 1px 2px; }
+.chip.flash_flood { background: #7c3aed33; color: #a78bfa; }
+.chip.extreme_heat { background: #dc262633; color: #f87171; }
+.chip.dust_storm { background: #d9770633; color: #fbbf24; }
+.chip.coastal_humid_heat { background: #0891b233; color: #22d3ee; }
+
+/* ── Search ── */
+#searchBox { padding: 8px 12px; }
+#searchBox input { width: 100%; background: #162230; border: 1px solid #3a4a58; color: #e0e0e0; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+#searchResults { max-height: 200px; overflow-y: auto; margin: 0 12px; }
+#searchResults .sr { font-size: 12px; padding: 7px 10px; cursor: pointer; border-radius: 4px; margin: 2px 0; }
+#searchResults .sr:hover { background: #1e3040; }
+#searchResults .sr .srid { color: #8ab4f8; font-weight: 500; }
+#searchResults .sr .srcat { color: #6b7280; font-size: 10px; margin-left: 6px; }
+
+/* ── Graph area ── */
+#graph-wrap { flex: 1; position: relative; }
+#graph { width: 100%; height: 100%; }
+.gtoolbar { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex; gap: 5px; }
+.gtoolbar button { background: #1e2d3d; border: 1px solid #3a4a58; color: #c0c0c0; padding: 5px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+.gtoolbar button:hover { background: #2a3a58; color: #fff; }
+#status { position: absolute; bottom: 0; left: 0; right: 0; height: 28px; background: #1a2530; display: flex; align-items: center; padding: 0 12px; font-size: 11px; color: #6b7280; }
+
+/* ── Event detection mini ── */
+.miniform { display: flex; gap: 6px; padding: 8px 12px; background: #162230; margin: 0 12px 8px; border-radius: 6px; }
+.miniform input, .miniform select { background: #0f1923; border: 1px solid #3a4a58; color: #e0e0e0; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+.miniform button { background: #2563eb; border: none; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+.mini-events { padding: 0 12px 8px; max-height: 150px; overflow-y: auto; }
+.mini-event { font-size: 11px; padding: 6px 8px; margin: 3px 0; background: #162230; border-radius: 4px; border-left: 3px solid #3b82f6; cursor: pointer; }
+.mini-event .sev { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div class="panel-header">
+    <h2>MAZU · 多灾种知识图谱</h2>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+      <span class="chip flash_flood">山洪</span>
+      <span class="chip extreme_heat">高温</span>
+      <span class="chip dust_storm">沙尘</span>
+      <span class="chip coastal_humid_heat">沿海</span>
+    </div>
+  </div>
+
+  <div id="searchBox"><input type="text" id="searchInput" placeholder="搜索指标 / 数据源..." oninput="doSearch()"></div>
+  <div id="searchResults"></div>
+
+  <div style="font-size:11px;color:#6b7280;padding:4px 14px;display:flex;gap:16px;">
+    <span>节点: <b id="nodeCount">-</b></span><span>边: <b id="edgeCount">-</b></span>
+  </div>
+
+  <div class="panel-body" id="emptyHint" style="color:#6b7280;font-size:13px;text-align:center;padding-top:40px;">
+    点击图中节点<br>查看关系和计算逻辑
+  </div>
+
+  <div class="panel-body" id="detail"></div>
+
+  <div class="miniform">
+    <input type="text" id="evDate" value="2025-08-19" style="width:90px;" placeholder="日期">
+    <select id="evHazard"><option value="">全部</option><option value="flash_flood">山洪</option><option value="extreme_heat">高温</option><option value="dust_storm">沙尘</option><option value="coastal_humid_heat">沿海</option></select>
+    <button onclick="runDetect()">检测</button>
+  </div>
+  <div class="mini-events" id="miniEvents"></div>
+</div>
+
+<div id="graph-wrap">
+  <div id="graph"></div>
+  <div class="gtoolbar">
+    <button onclick="fitGraph()">重置视图</button>
+    <button onclick="showAll()">全部节点</button>
+    <button onclick="focusHazards()">灾种关联</button>
+    <button onclick="focusSources()">数据源关联</button>
+  </div>
+  <div id="status">就绪 · 点击节点查看详情</div>
+</div>
+
+<script>
+let network = null;
+let allNodes = [], allEdges = [];
+
+// ── Colors ──
+const TYPE_COLOR = { Indicator: "#3b82f6", DataSource: "#10b981", HazardType: "#ef4444", Region: "#f59e0b", Rule: "#8b5cf6" };
+const REL_COLOR = { derived_from: "#3b82f6", co_occurs_with: "#8b5cf6", sourced_from: "#10b981", contributes_to: "#ef4444", detects: "#f59e0b" };
+const REL_LABEL_CN = { derived_from: "派生自", co_occurs_with: "联合解释", sourced_from: "数据来源", contributes_to: "贡献于", detects: "检测" };
+
+async function init() {
+  const r = await fetch("/api/kg/summary");
+  const d = await r.json();
+  allNodes = d.nodes; allEdges = d.edges;
+  document.getElementById("nodeCount").textContent = d.total_nodes;
+  document.getElementById("edgeCount").textContent = d.total_edges;
+  draw(allNodes, allEdges);
+}
+
+function draw(nodes, edges) {
+  const nodeArr = nodes.map(n => ({
+    id: n.id, label: n.id.length > 30 ? n.id.slice(0,30)+"…" : n.id,
+    group: n.type, title: (n.title||n.id),
+    color: { background: TYPE_COLOR[n.type]||"#6b7280", border: "#0000" },
+    font: { size: 9, color: "#c0c0c0" },
+    shape: n.type === "HazardType" ? "triangle" : n.type === "Rule" ? "diamond" : n.type === "DataSource" ? "square" : "dot",
+    size: n.type === "HazardType" ? 20 : n.type === "DataSource" ? 14 : n.type === "Rule" ? 12 : 7,
+  }));
+  const edgeArr = edges.map(e => ({
+    from: e.from, to: e.to, label: e.label,
+    color: { color: REL_COLOR[e.label]||"#6b7280", highlight: REL_COLOR[e.label]||"#6b7280" },
+    font: { size: 8, color: "#8ab4f8" },
+    arrows: e.label === "co_occurs_with" ? "to,from" : "to",
+    width: e.label === "derived_from" ? 2 : 1,
+  }));
+  network = new vis.Network(document.getElementById("graph"),
+    { nodes: new vis.DataSet(nodeArr), edges: new vis.DataSet(edgeArr) },
+    { physics: { solver: "forceAtlas2Based", forceAtlas2Based: { gravitationalConstant: -55, springLength: 130 } },
+      interaction: { hover: true, tooltipDelay: 150 },
+      groups: {
+        Indicator: { color: { background: "#3b82f6", border: "#3b82f6" } },
+        DataSource: { color: { background: "#10b981", border: "#10b981" } },
+        HazardType: { color: { background: "#ef4444", border: "#ef4444" } },
+        Region: { color: { background: "#f59e0b", border: "#f59e0b" } },
+        Rule: { color: { background: "#8b5cf6", border: "#8b5cf6" } },
+      }
+    }
+  );
+  network.on("click", p => { if (p.nodes.length) showDetail(p.nodes[0]); });
+  network.on("doubleClick", p => { if (p.nodes.length) focusNode(p.nodes[0]); });
+}
+
+function fitGraph() { network && network.fit({ animation: true }); }
+function focusNode(id) { network && network.focus(id, { scale: 1.8, animation: true }); }
+
+function showAll() { draw(allNodes, allEdges); stat("全部节点"); }
+function focusHazards() {
+  const hids = allNodes.filter(n => n.type === "HazardType").map(n => n.id);
+  const re = allEdges.filter(e => hids.includes(e.from) || hids.includes(e.to));
+  const rn = allNodes.filter(n => hids.includes(n.id) || re.some(e => e.from===n.id||e.to===n.id));
+  draw(rn, re); stat("灾种 + 关联指标");
+}
+function focusSources() {
+  const sids = allNodes.filter(n => n.type === "DataSource").map(n => n.id);
+  const re = allEdges.filter(e => sids.includes(e.from) || sids.includes(e.to));
+  const rn = allNodes.filter(n => sids.includes(n.id) || re.some(e => e.from===n.id||e.to===n.id));
+  draw(rn, re); stat("数据源 + 下游指标");
+}
+
+// ── Detail panel ──
+async function showDetail(nodeId) {
+  const node = allNodes.find(n => n.id === nodeId);
+  if (!node) return;
+  focusNode(nodeId);
+  stat(`选中: ${nodeId}`);
+
+  // Get connected edges
+  const inEdges = allEdges.filter(e => e.to === nodeId);
+  const outEdges = allEdges.filter(e => e.from === nodeId);
+
+  let html = `<div class="detail-card">`;
+
+  // Head
+  const color = TYPE_COLOR[node.type] || "#6b7280";
+  html += `<div class="head"><div class="dot" style="background:${color}"></div><div class="title">${nodeId}</div></div>`;
+  html += `<div class="meta">类型: ${node.type} | `;
+
+  if (node.type === "Indicator") {
+    // Fetch full details
+    const r = await fetch(`/api/kg/indicator/${nodeId}`);
+    const d = await r.json();
+    const op = d.operator || {};
+    html += `单位: ${op.output_unit||"N/A"} | 来源: ${op.source||"N/A"}`;
+    html += `</div>`;
+    if (op.description) html += `<div class="meta">${op.description}</div>`;
+
+    // Expression / DAG
+    if (op.expression) {
+      html += `<div class="section"><h4>计算公式</h4><div class="dag-box">${op.expression}</div></div>`;
+    }
+    if (op.dag) {
+      html += `<div class="section"><h4>DAG (可执行)</h4><div class="dag-box">${JSON.stringify(op.dag, null, 2)}</div></div>`;
+    }
+    if (op.inputs && op.inputs.length > 0) {
+      html += `<div class="section"><h4>输入指标</h4>`;
+      op.inputs.forEach(inp => {
+        html += `<div class="rel-item" onclick="showDetail('${inp}')"><span class="rdot" style="background:#3b82f6"></span>${inp} <span class="arrow">→</span> ${nodeId}</div>`;
+      });
+      html += `</div>`;
+    }
+    if (d.chain && d.chain.indicators && d.chain.indicators.length > 1) {
+      html += `<div class="section"><h4>完整推导链 (${d.chain.indicators.length} 步)</h4>`;
+      html += `<div class="dag-box">${d.chain.indicators.join(" → ")}</div>`;
+      if (d.chain.sources && d.chain.sources.length > 0) {
+        html += `<div style="font-size:11px;color:#10b981;margin-top:4px;">数据源: ${d.chain.sources.join(", ")}</div>`;
+      }
+      html += `</div>`;
+    }
+    if (d.co_occurring && d.co_occurring.length > 0) {
+      html += `<div class="section"><h4>联合解释指标</h4>`;
+      d.co_occurring.forEach(co => {
+        html += `<div class="rel-item" onclick="showDetail('${co}')"><span class="rdot" style="background:#8b5cf6"></span>${co}</div>`;
+      });
+      html += `</div>`;
+    }
+    if (op.limitations) {
+      html += `<div class="section"><h4>局限性</h4><div class="meta">${op.limitations}</div></div>`;
+    }
+  } else if (node.type === "HazardType") {
+    html += `</div><div class="meta">${node.display_name||nodeId}</div>`;
+    if (node.description) html += `<div class="meta">${node.description}</div>`;
+    // Fetch hazard indicators
+    const r = await fetch(`/api/kg/hazard/${nodeId}`);
+    const d = await r.json();
+    if (d.indicators && d.indicators.length > 0) {
+      html += `<div class="section"><h4>关联指标 (${d.indicators.length} 个)</h4>`;
+      d.indicators.forEach(ind => {
+        html += `<div class="rel-item" onclick="showDetail('${ind.id}')"><span class="rdot" style="background:#3b82f6"></span>${ind.id} <span style="color:#9ca3af;">${ind.unit}</span></div>`;
+      });
+      html += `</div>`;
+    }
+  } else if (node.type === "DataSource") {
+    html += `</div>`;
+    html += `<div class="meta">${node.full_name||nodeId}</div>`;
+    if (node.product) html += `<div class="meta">产品: ${node.product} | 分辨率: ${node.resolution||"N/A"}</div>`;
+    // Show downstream indicators
+    const downstream = outEdges.filter(e => e.label === "sourced_from" || allNodes.find(n=>n.id===e.to)?.type==="Indicator");
+    if (downstream.length > 0) {
+      html += `<div class="section"><h4>下游指标 (${downstream.length} 个)</h4>`;
+      downstream.forEach(e => {
+        html += `<div class="rel-item" onclick="showDetail('${e.to}')"><span class="rdot" style="background:#3b82f6"></span>${e.to}</div>`;
+      });
+      html += `</div>`;
+    }
+  } else if (node.type === "Rule") {
+    html += `</div>`;
+    html += `<div class="meta">检测: ${node.hazard_type || ""}</div>`;
+    if (node.conditions) {
+      html += `<div class="section"><h4>检测条件</h4>`;
+      node.conditions.forEach(c => {
+        html += `<div class="rel-item" onclick="showDetail('${c.indicator}')"><span class="rdot" style="background:#3b82f6"></span>${c.indicator} ${c.op||c.condition} ${c.value} <span style="color:#6b7280;">(权重 ${c.weight})</span></div>`;
+      });
+      html += `</div>`;
+    }
+    if (node.severity) {
+      html += `<div class="section"><h4>严重度分级</h4>`;
+      node.severity.forEach(s => {
+        html += `<div style="font-size:11px;padding:2px 0;">[${s.range[0]}-${s.range[1]}] ${s.label}</div>`;
+      });
+      html += `</div>`;
+    }
+  } else if (node.type === "Region") {
+    html += `</div>`;
+    html += `<div class="meta">纬度: ${node.lat_min}°N ~ ${node.lat_max}°N | 经度: ${node.lon_min}°E ~ ${node.lon_max}°E</div>`;
+  }
+
+  // Incoming relationships
+  if (inEdges.length > 0) {
+    html += `<div class="section"><h4>入边 (${inEdges.length})</h4>`;
+    inEdges.forEach(e => {
+      const lbl = REL_LABEL_CN[e.label] || e.label;
+      html += `<div class="rel-item" onclick="showDetail('${e.from}')"><span class="rdot" style="background:${TYPE_COLOR[allNodes.find(n=>n.id===e.from)?.type]||'#6b7280'}"></span>${e.from} <span class="arrow">—${lbl}→</span> ${nodeId}</div>`;
+    });
+    html += `</div>`;
+  }
+  // Outgoing relationships
+  if (outEdges.length > 0) {
+    html += `<div class="section"><h4>出边 (${outEdges.length})</h4>`;
+    outEdges.forEach(e => {
+      const lbl = REL_LABEL_CN[e.label] || e.label;
+      html += `<div class="rel-item" onclick="showDetail('${e.to}')"><span class="rdot" style="background:${TYPE_COLOR[allNodes.find(n=>n.id===e.to)?.type]||'#6b7280'}"></span>${nodeId} <span class="arrow">—${lbl}→</span> ${e.to}</div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  document.getElementById("detail").innerHTML = html;
+  document.getElementById("detail").classList.add("show");
+  document.getElementById("emptyHint").style.display = "none";
+}
+
+// ── Search ──
+let st;
+function doSearch() {
+  clearTimeout(st);
+  st = setTimeout(async () => {
+    const q = document.getElementById("searchInput").value.trim();
+    if (!q) { document.getElementById("searchResults").innerHTML=""; return; }
+    const r = await fetch(`/api/kg/search?q=${encodeURIComponent(q)}`);
+    const items = await r.json();
+    document.getElementById("searchResults").innerHTML = items.map(i =>
+      `<div class="sr" onclick="showDetail('${i.id}')"><span class="srid">${i.id}</span><span class="srcat">${i.category}</span><br><span style="color:#9ca3af;">${(i.description||"").slice(0,50)}</span></div>`
+    ).join("") || `<div class="sr" style="color:#6b7280;">无结果</div>`;
+  }, 250);
+}
+
+// ── Event detection ──
+async function runDetect() {
+  const date = document.getElementById("evDate").value;
+  const ht = document.getElementById("evHazard").value;
+  stat(`检测 ${date}...`);
+  const r = await fetch("/api/detect", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({date, hazard_type: ht||null}) });
+  const d = await r.json();
+  const evs = d.events;
+  if (!evs.length) {
+    document.getElementById("miniEvents").innerHTML = `<div style="color:#6b7280;font-size:11px;padding:4px;">未检测到极端事件</div>`;
+  } else {
+    document.getElementById("miniEvents").innerHTML = evs.map(e => `
+      <div class="mini-event" onclick="showEventOnGraph('${e.event_id}','${e.hazard_type}','${e.centroid_lat}','${e.centroid_lon}')">
+        <span class="sev">${e.severity.toUpperCase()}</span>
+        <span class="chip ${e.hazard_type}">${e.hazard_type}</span><br>
+        ${e.cells_count} 格点 · ${e.area_km2.toFixed(0)} km² · ${e.region}<br>
+        <span style="color:#6b7280;">评分:${e.severity_score} 置信度:${e.confidence}</span>
+      </div>
+    `).join("");
+  }
+  stat(`检测完成: ${evs.length} 事件`);
+}
+
+function showEventOnGraph(evId, htype, lat, lon) {
+  // Focus on the hazard type node
+  showDetail(htype);
+  stat(`事件: ${evId} @ ${lat}°N, ${lon}°E`);
+}
+
+// ── Helpers ──
+function stat(msg) { document.getElementById("status").textContent = msg; }
+
+init();
+</script>
+</body>
+</html>

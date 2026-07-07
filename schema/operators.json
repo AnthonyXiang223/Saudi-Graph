@@ -1,0 +1,2615 @@
+{
+  "description": "沙特极端事件指标算子定义 — 物理公式编码，与业务阈值分离。共91个指标，覆盖9个类别，6个数据源。",
+  "total_indicators": 91,
+  "operators": [
+    {
+      "id": "monthly_precip_total",
+      "description": "月累计总降水，来自 DS1 MONTH_ACC",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "tp (MONTH_ACC)",
+      "dag": {
+        "op": "var",
+        "name": "tp"
+      },
+      "output_unit": "mm",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_precip_mmday",
+        "monthly_convective_precip",
+        "monthly_large_scale_precip"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365
+      },
+      "limitations": "月背景，不反映逐日变化"
+    },
+    {
+      "id": "monthly_precip_mmday",
+      "description": "月平均降水强度，月累计除以当月天数",
+      "category": "monthly_surface_energy",
+      "inputs": [
+        "monthly_precip_total"
+      ],
+      "expression": "monthly_precip_total / days_in_month",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "var",
+          "name": "monthly_precip_total"
+        },
+        "right": "days_in_month"
+      },
+      "output_unit": "mm/day",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_precip_total"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365
+      },
+      "limitations": "days_in_month 为外部参数(28/29/30/31)"
+    },
+    {
+      "id": "monthly_convective_precip",
+      "description": "月累计对流降水，来自 DS1 MONTH_ACC acpcp",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "acpcp (MONTH_ACC)",
+      "dag": {
+        "op": "var",
+        "name": "acpcp"
+      },
+      "output_unit": "mm",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_large_scale_precip",
+        "monthly_convective_precip_ratio"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_large_scale_precip",
+      "description": "月累计非对流(层状/大尺度)降水，来自 DS1 MONTH_ACC ncpcp",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "ncpcp (MONTH_ACC)",
+      "dag": {
+        "op": "var",
+        "name": "ncpcp"
+      },
+      "output_unit": "mm",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_convective_precip"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_convective_precip_ratio",
+      "description": "月对流降水占比，越高说明降水更偏对流性",
+      "category": "monthly_surface_energy",
+      "inputs": [
+        "monthly_convective_precip",
+        "monthly_precip_total"
+      ],
+      "expression": "monthly_convective_precip / monthly_precip_total",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "var",
+          "name": "monthly_convective_precip"
+        },
+        "right": {
+          "op": "var",
+          "name": "monthly_precip_total"
+        }
+      },
+      "output_unit": "1",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_convective_precip"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": "分母 monthly_precip_total 近零时不稳定的比值"
+    },
+    {
+      "id": "monthly_bowen_ratio",
+      "description": "月 Bowen 比，感热相对潜热越高地表越干热",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "avg_ishf / avg_slhtf",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "var",
+          "name": "avg_ishf"
+        },
+        "right": {
+          "op": "var",
+          "name": "avg_slhtf"
+        }
+      },
+      "output_unit": "1",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_heat_stress_index"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": "分母潜热通量小时会放大异常，建议加阈值"
+    },
+    {
+      "id": "monthly_sw_net",
+      "description": "月净短波辐射，地表吸收的太阳短波能量",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "sdswrf - suswrf",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "sdswrf"
+        },
+        "right": {
+          "op": "var",
+          "name": "suswrf"
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_lw_net",
+        "monthly_net_radiation"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_lw_net",
+      "description": "月净长波辐射，通常为负表示地表长波净损失",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "sdlwrf - sulwrf",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "sdlwrf"
+        },
+        "right": {
+          "op": "var",
+          "name": "sulwrf"
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_sw_net",
+        "monthly_net_radiation"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_net_radiation",
+      "description": "月净辐射，地表能量收支背景",
+      "category": "monthly_surface_energy",
+      "inputs": [
+        "monthly_sw_net",
+        "monthly_lw_net"
+      ],
+      "expression": "monthly_sw_net + monthly_lw_net",
+      "dag": {
+        "op": "add",
+        "left": {
+          "op": "var",
+          "name": "monthly_sw_net"
+        },
+        "right": {
+          "op": "var",
+          "name": "monthly_lw_net"
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_sw_net",
+        "monthly_lw_net"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_heat_stress_index",
+      "description": "月地表热胁迫代理，结合感热通量和吸收短波",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "avg_ishf + (1 - avg_al/100) * sdswrf",
+      "dag": {
+        "op": "add",
+        "left": {
+          "op": "var",
+          "name": "avg_ishf"
+        },
+        "right": {
+          "op": "mul",
+          "left": {
+            "op": "sub",
+            "left": 1,
+            "right": {
+              "op": "div",
+              "left": {
+                "op": "var",
+                "name": "avg_al"
+              },
+              "right": 100
+            }
+          },
+          "right": {
+            "op": "var",
+            "name": "sdswrf"
+          }
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_bowen_ratio"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_wind_stress_mag",
+      "description": "月地表风应力强度，反映地表动量交换",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "sqrt(avg_utaua^2 + avg_vtaua^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "avg_utaua"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "avg_vtaua"
+            }
+          }
+        }
+      },
+      "output_unit": "N m-2",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_orographic_stress"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_orographic_stress",
+      "description": "月地形重力波应力，表征地形扰动和山地动力作用",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "sqrt(iegwss^2 + ingwss^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "iegwss"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "ingwss"
+            }
+          }
+        }
+      },
+      "output_unit": "N m-2",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_wind_stress_mag"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_uvb_flux",
+      "description": "月 UV-B 下行通量，健康风险和晴空辐射背景",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "duvb",
+      "dag": {
+        "op": "var",
+        "name": "duvb"
+      },
+      "output_unit": "W m-2",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_uvb_clear_ratio"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "monthly_uvb_clear_ratio",
+      "description": "晴空/全天 UV-B 比，衡量云和气溶胶对 UV-B 的调制",
+      "category": "monthly_surface_energy",
+      "inputs": [],
+      "expression": "cduvb / duvb",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "var",
+          "name": "cduvb"
+        },
+        "right": {
+          "op": "var",
+          "name": "duvb"
+        }
+      },
+      "output_unit": "1",
+      "source": "DS1",
+      "co_occurs_with": [
+        "monthly_uvb_flux"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "total_cloud_cover",
+      "description": "总云量",
+      "category": "cloud",
+      "inputs": [],
+      "expression": "tcc",
+      "dag": {
+        "op": "var",
+        "name": "tcc"
+      },
+      "output_unit": "%",
+      "source": "DS2",
+      "co_occurs_with": [
+        "low_cloud_cover",
+        "middle_cloud_cover",
+        "high_cloud_cover",
+        "daily_precip_total"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "low_cloud_cover",
+      "description": "低云量",
+      "category": "cloud",
+      "inputs": [],
+      "expression": "tcc_lowCloudLayer_0_0",
+      "dag": {
+        "op": "var",
+        "name": "tcc_lowCloudLayer_0_0"
+      },
+      "output_unit": "%",
+      "source": "DS2",
+      "co_occurs_with": [
+        "total_cloud_cover",
+        "rh2m"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "middle_cloud_cover",
+      "description": "中云量",
+      "category": "cloud",
+      "inputs": [],
+      "expression": "tcc_middleCloudLayer_0_0",
+      "dag": {
+        "op": "var",
+        "name": "tcc_middleCloudLayer_0_0"
+      },
+      "output_unit": "%",
+      "source": "DS2",
+      "co_occurs_with": [
+        "total_cloud_cover",
+        "daily_large_scale_precip"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "high_cloud_cover",
+      "description": "高云量",
+      "category": "cloud",
+      "inputs": [],
+      "expression": "tcc_highCloudLayer_0_0",
+      "dag": {
+        "op": "var",
+        "name": "tcc_highCloudLayer_0_0"
+      },
+      "output_unit": "%",
+      "source": "DS2",
+      "co_occurs_with": [
+        "total_cloud_cover",
+        "daily_convective_precip",
+        "cape"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "precip_mmday",
+      "description": "日平均降水率换算，来自日平均降水率 prate * 86400",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "prate * 86400",
+      "dag": {
+        "op": "mul",
+        "left": {
+          "op": "var",
+          "name": "prate"
+        },
+        "right": 86400
+      },
+      "output_unit": "mm/day",
+      "source": "DS2",
+      "co_occurs_with": [
+        "daily_precip_total"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": "目前有效日很少，不宜作为主降水指标"
+    },
+    {
+      "id": "convective_precip_ratio",
+      "description": "日对流降水占比，表示降水对流性",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "cpr / prate",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "var",
+          "name": "cpr"
+        },
+        "right": {
+          "op": "var",
+          "name": "prate"
+        }
+      },
+      "output_unit": "1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "daily_convective_precip",
+        "daily_large_scale_precip",
+        "cape"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": "需和总降水共同解释，分母 prate 近零时不稳定"
+    },
+    {
+      "id": "daily_precip_total",
+      "description": "日累计总降水，当前最可靠的日降水主指标",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "tp",
+      "dag": {
+        "op": "var",
+        "name": "tp"
+      },
+      "output_unit": "mm",
+      "source": "DS2",
+      "co_occurs_with": [
+        "ds10_max_1h",
+        "daily_convective_precip",
+        "pwat",
+        "ivt_convergence",
+        "flash_flood_risk"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "daily_convective_precip",
+      "description": "日累计对流降水，表征强对流贡献",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "acpcp",
+      "dag": {
+        "op": "var",
+        "name": "acpcp"
+      },
+      "output_unit": "mm",
+      "source": "DS2",
+      "co_occurs_with": [
+        "daily_large_scale_precip",
+        "daily_precip_total",
+        "cape"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "daily_large_scale_precip",
+      "description": "日累计非对流降水，表征层状或大尺度降水贡献",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "ncpcp",
+      "dag": {
+        "op": "var",
+        "name": "ncpcp"
+      },
+      "output_unit": "mm",
+      "source": "DS2",
+      "co_occurs_with": [
+        "daily_convective_precip",
+        "daily_precip_total"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "bowen_ratio",
+      "description": "日 Bowen 比，感热相对潜热",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "avg_ishf / avg_slhtf",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "var",
+          "name": "avg_ishf"
+        },
+        "right": {
+          "op": "var",
+          "name": "avg_slhtf"
+        }
+      },
+      "output_unit": "1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "heat_stress_index",
+        "vpd_kpa"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": "极端值较多，建议加分母阈值后再用于建模"
+    },
+    {
+      "id": "sw_net",
+      "description": "日净短波辐射，白天太阳加热背景",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "sdswrf - suswrf",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "sdswrf"
+        },
+        "right": {
+          "op": "var",
+          "name": "suswrf"
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS2",
+      "co_occurs_with": [
+        "lw_net",
+        "net_radiation"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "lw_net",
+      "description": "日净长波辐射，夜间和地表长波冷却背景",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "sdlwrf - sulwrf",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "sdlwrf"
+        },
+        "right": {
+          "op": "var",
+          "name": "sulwrf"
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS2",
+      "co_occurs_with": [
+        "sw_net",
+        "net_radiation"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "net_radiation",
+      "description": "日净辐射，地表可用能量",
+      "category": "daily_precip_energy",
+      "inputs": [
+        "sw_net",
+        "lw_net"
+      ],
+      "expression": "sw_net + lw_net",
+      "dag": {
+        "op": "add",
+        "left": {
+          "op": "var",
+          "name": "sw_net"
+        },
+        "right": {
+          "op": "var",
+          "name": "lw_net"
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS2",
+      "co_occurs_with": [
+        "sw_net",
+        "lw_net"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "heat_stress_index",
+      "description": "日地表热胁迫代理，越高代表吸收太阳能和感热通量越强",
+      "category": "daily_precip_energy",
+      "inputs": [],
+      "expression": "avg_ishf + (1 - avg_al/100) * sdswrf",
+      "dag": {
+        "op": "add",
+        "left": {
+          "op": "var",
+          "name": "avg_ishf"
+        },
+        "right": {
+          "op": "mul",
+          "left": {
+            "op": "sub",
+            "left": 1,
+            "right": {
+              "op": "div",
+              "left": {
+                "op": "var",
+                "name": "avg_al"
+              },
+              "right": 100
+            }
+          },
+          "right": {
+            "op": "var",
+            "name": "sdswrf"
+          }
+        }
+      },
+      "output_unit": "W m-2",
+      "source": "DS2",
+      "co_occurs_with": [
+        "bowen_ratio",
+        "t2m_c",
+        "heat_index_c"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "t2m_c",
+      "description": "2米气温",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "t2m - 273.15",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "t2m"
+        },
+        "right": 273.15
+      },
+      "output_unit": "degC",
+      "source": "DS2",
+      "co_occurs_with": [
+        "tmax_c",
+        "tmin_c",
+        "t2m_anomaly_c",
+        "heat_index_c",
+        "apparent_temp_c",
+        "vpd_kpa",
+        "diurnal_temp_range_c"
+      ],
+      "availability": {
+        "effective_days": 362,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "d2m_c",
+      "description": "2米露点温度",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "d2m - 273.15",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "d2m"
+        },
+        "right": 273.15
+      },
+      "output_unit": "degC",
+      "source": "DS2",
+      "co_occurs_with": [
+        "dewpoint_depression_c",
+        "rh2m",
+        "sh2m"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "dewpoint_depression_c",
+      "description": "露点差，越大越干燥蒸发潜力越强",
+      "category": "surface_thermo_wind",
+      "inputs": [
+        "t2m_c",
+        "d2m_c"
+      ],
+      "expression": "t2m_c - d2m_c",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "t2m_c"
+        },
+        "right": {
+          "op": "var",
+          "name": "d2m_c"
+        }
+      },
+      "output_unit": "degC",
+      "source": "DS2",
+      "co_occurs_with": [
+        "rh2m",
+        "vpd_kpa",
+        "wind10_speed"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "rh2m",
+      "description": "2米相对湿度",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "r2",
+      "dag": {
+        "op": "var",
+        "name": "r2"
+      },
+      "output_unit": "%",
+      "source": "DS2",
+      "co_occurs_with": [
+        "d2m_c",
+        "dewpoint_depression_c",
+        "vpd_kpa",
+        "heat_index_c",
+        "sst_celsius"
+      ],
+      "availability": {
+        "effective_days": 364,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "vpd_kpa",
+      "description": "饱和水汽压差，越高空气越干蒸散需求越强",
+      "category": "surface_thermo_wind",
+      "inputs": [
+        "t2m_c",
+        "rh2m"
+      ],
+      "expression": "es(T) * (1 - RH/100)",
+      "dag": {
+        "op": "vpd_formula",
+        "t_var": "t2m_c",
+        "rh_var": "rh2m"
+      },
+      "output_unit": "kPa",
+      "source": "DS2",
+      "co_occurs_with": [
+        "dewpoint_depression_c",
+        "heat_index_c",
+        "bowen_ratio"
+      ],
+      "availability": {
+        "effective_days": 362,
+        "total_days": 365
+      },
+      "limitations": "派生前已屏蔽填充值和非物理输入"
+    },
+    {
+      "id": "heat_index_c",
+      "description": "热指数(Rothfusz回归)，低温/低湿时退回气温",
+      "category": "surface_thermo_wind",
+      "inputs": [
+        "t2m_c",
+        "rh2m"
+      ],
+      "expression": "Rothfusz_regression(t2m_c, rh2m)",
+      "dag": {
+        "op": "heat_index_formula",
+        "t_var": "t2m_c",
+        "rh_var": "rh2m"
+      },
+      "output_unit": "degC",
+      "source": "DS2",
+      "co_occurs_with": [
+        "t2m_c",
+        "apparent_temp_c",
+        "tmax_c",
+        "sst_celsius"
+      ],
+      "availability": {
+        "effective_days": 362,
+        "total_days": 365
+      },
+      "limitations": "健康热风险指标，湿热条件下高于气温"
+    },
+    {
+      "id": "sh2m",
+      "description": "2米比湿",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "sh2",
+      "dag": {
+        "op": "var",
+        "name": "sh2"
+      },
+      "output_unit": "kg kg-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "d2m_c",
+        "qmax_2m",
+        "qmin_2m"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "apparent_temp_c",
+      "description": "体感温度",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "aptmp - 273.15",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "aptmp"
+        },
+        "right": 273.15
+      },
+      "output_unit": "degC",
+      "source": "DS2",
+      "co_occurs_with": [
+        "heat_index_c",
+        "t2m_c"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": "派生前已屏蔽填充值"
+    },
+    {
+      "id": "wind10_speed",
+      "description": "10米风速",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "sqrt(u10^2 + v10^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "u10"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "v10"
+            }
+          }
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "dewpoint_depression_c",
+        "wind850_speed",
+        "wind925_speed",
+        "flash_flood_risk"
+      ],
+      "availability": {
+        "effective_days": 364,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "tmax_c",
+      "description": "日最高2米气温，高温日筛查主指标",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "tmax - 273.15",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "tmax"
+        },
+        "right": 273.15
+      },
+      "output_unit": "degC",
+      "source": "DS4",
+      "co_occurs_with": [
+        "t2m_c",
+        "tmin_c",
+        "diurnal_temp_range_c",
+        "tmax_anomaly_c",
+        "heatwave_day_flag",
+        "heat_index_c"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "tmin_c",
+      "description": "日最低2米气温，夜间热胁迫参考",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "tmin - 273.15",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "tmin"
+        },
+        "right": 273.15
+      },
+      "output_unit": "degC",
+      "source": "DS4",
+      "co_occurs_with": [
+        "t2m_c",
+        "tmax_c",
+        "diurnal_temp_range_c"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "diurnal_temp_range_c",
+      "description": "日较差，反映昼夜热力差异和夜间冷却能力",
+      "category": "surface_thermo_wind",
+      "inputs": [
+        "tmax_c",
+        "tmin_c"
+      ],
+      "expression": "tmax_c - tmin_c",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "tmax_c"
+        },
+        "right": {
+          "op": "var",
+          "name": "tmin_c"
+        }
+      },
+      "output_unit": "degC",
+      "source": "DS4",
+      "co_occurs_with": [
+        "tmax_c",
+        "tmin_c",
+        "t2m_c"
+      ],
+      "availability": {
+        "effective_days": 362,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "qmax_2m",
+      "description": "日最大2米比湿，湿热上限",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "qmax",
+      "dag": {
+        "op": "var",
+        "name": "qmax"
+      },
+      "output_unit": "kg kg-1",
+      "source": "DS4",
+      "co_occurs_with": [
+        "sh2m",
+        "qmin_2m"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "qmin_2m",
+      "description": "日最小2米比湿，干燥背景下限",
+      "category": "surface_thermo_wind",
+      "inputs": [],
+      "expression": "qmin",
+      "dag": {
+        "op": "var",
+        "name": "qmin"
+      },
+      "output_unit": "kg kg-1",
+      "source": "DS4",
+      "co_occurs_with": [
+        "sh2m",
+        "qmax_2m"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "daily_precip_climatology",
+      "description": "1991-2020逐日降水气候态(DS8站点最近邻映射到网格)",
+      "category": "ds8_anomaly",
+      "inputs": [],
+      "expression": "DS8 PRE/MDAY 最近站逐日 normal",
+      "dag": {
+        "op": "ds8_lookup",
+        "element": "PRE",
+        "stat": "MDAY"
+      },
+      "output_unit": "mm/day",
+      "source": "DS8",
+      "co_occurs_with": [
+        "daily_precip_anomaly",
+        "daily_precip_anomaly_ratio",
+        "daily_precip_climatology_station_distance_km"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": "DS8为站点气候态非格点场，沙特bbox内仅7个PRE站点，最近邻映射"
+    },
+    {
+      "id": "daily_precip_climatology_station_distance_km",
+      "description": "降水气候态最近站距离，越大局地不确定性越高",
+      "category": "ds8_anomaly",
+      "inputs": [],
+      "expression": "网格点到所用 DS8 PRE 站的球面距离",
+      "dag": {
+        "op": "ds8_station_distance",
+        "element": "PRE"
+      },
+      "output_unit": "km",
+      "source": "DS8",
+      "co_occurs_with": [
+        "daily_precip_climatology"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "daily_precip_anomaly",
+      "description": "日降水距平，正值表示高于1991-2020同日站点气候态",
+      "category": "ds8_anomaly",
+      "inputs": [
+        "daily_precip_total",
+        "daily_precip_climatology"
+      ],
+      "expression": "daily_precip_total - daily_precip_climatology",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "daily_precip_total"
+        },
+        "right": {
+          "op": "var",
+          "name": "daily_precip_climatology"
+        }
+      },
+      "output_unit": "mm",
+      "source": "DS2+DS8",
+      "co_occurs_with": [
+        "daily_precip_total",
+        "daily_precip_anomaly_ratio"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "daily_precip_anomaly_ratio",
+      "description": "日降水距平率，干旱区分母很小会放大",
+      "category": "ds8_anomaly",
+      "inputs": [
+        "daily_precip_total",
+        "daily_precip_climatology"
+      ],
+      "expression": "(daily_precip_total - climatology) / climatology",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "sub",
+          "left": {
+            "op": "var",
+            "name": "daily_precip_total"
+          },
+          "right": {
+            "op": "var",
+            "name": "daily_precip_climatology"
+          }
+        },
+        "right": {
+          "op": "var",
+          "name": "daily_precip_climatology"
+        }
+      },
+      "output_unit": "1",
+      "source": "DS2+DS8",
+      "co_occurs_with": [
+        "daily_precip_anomaly"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": "不适合单独作为预警阈值，建议优先使用 daily_precip_anomaly 和 daily_precip_total"
+    },
+    {
+      "id": "t2m_climatology_c",
+      "description": "1991-2020日平均气温气候态(DS8站点最近邻映射)",
+      "category": "ds8_anomaly",
+      "inputs": [],
+      "expression": "DS8 TAVG/MDAY 最近站逐日 normal",
+      "dag": {
+        "op": "ds8_lookup",
+        "element": "TAVG",
+        "stat": "MDAY"
+      },
+      "output_unit": "degC",
+      "source": "DS8",
+      "co_occurs_with": [
+        "t2m_anomaly_c",
+        "t2m_climatology_station_distance_km"
+      ],
+      "availability": {
+        "effective_days": 362,
+        "total_days": 365
+      },
+      "limitations": "TAVG在bbox内约45个站点"
+    },
+    {
+      "id": "t2m_climatology_station_distance_km",
+      "description": "TAVG气候态最近站距离",
+      "category": "ds8_anomaly",
+      "inputs": [],
+      "expression": "网格点到所用 DS8 TAVG 站的球面距离",
+      "dag": {
+        "op": "ds8_station_distance",
+        "element": "TAVG"
+      },
+      "output_unit": "km",
+      "source": "DS8",
+      "co_occurs_with": [
+        "t2m_climatology_c"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "t2m_anomaly_c",
+      "description": "2米气温距平，正值表示日平均气温偏暖",
+      "category": "ds8_anomaly",
+      "inputs": [
+        "t2m_c",
+        "t2m_climatology_c"
+      ],
+      "expression": "t2m_c - t2m_climatology_c",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "t2m_c"
+        },
+        "right": {
+          "op": "var",
+          "name": "t2m_climatology_c"
+        }
+      },
+      "output_unit": "degC",
+      "source": "DS2+DS8",
+      "co_occurs_with": [
+        "t2m_c",
+        "tmax_anomaly_c",
+        "heatwave_day_flag"
+      ],
+      "availability": {
+        "effective_days": 362,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "tmax_climatology_c",
+      "description": "1991-2020日最高温气候态(DS8站点最近邻映射)",
+      "category": "ds8_anomaly",
+      "inputs": [],
+      "expression": "DS8 TMAX/MDAY 最近站逐日 normal",
+      "dag": {
+        "op": "ds8_lookup",
+        "element": "TMAX",
+        "stat": "MDAY"
+      },
+      "output_unit": "degC",
+      "source": "DS8",
+      "co_occurs_with": [
+        "tmax_anomaly_c",
+        "tmax_climatology_station_distance_km"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": "TMAX站点较少，沙特bbox内仅约11个有效站点，必须和距平一起查看"
+    },
+    {
+      "id": "tmax_climatology_station_distance_km",
+      "description": "TMAX气候态最近站距离",
+      "category": "ds8_anomaly",
+      "inputs": [],
+      "expression": "网格点到所用 DS8 TMAX 站的球面距离",
+      "dag": {
+        "op": "ds8_station_distance",
+        "element": "TMAX"
+      },
+      "output_unit": "km",
+      "source": "DS8",
+      "co_occurs_with": [
+        "tmax_climatology_c"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "tmax_anomaly_c",
+      "description": "日最高温距平，正值表示最高温偏暖",
+      "category": "ds8_anomaly",
+      "inputs": [
+        "tmax_c",
+        "tmax_climatology_c"
+      ],
+      "expression": "tmax_c - tmax_climatology_c",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "tmax_c"
+        },
+        "right": {
+          "op": "var",
+          "name": "tmax_climatology_c"
+        }
+      },
+      "output_unit": "degC",
+      "source": "DS4+DS8",
+      "co_occurs_with": [
+        "tmax_c",
+        "t2m_anomaly_c",
+        "heatwave_day_flag"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "heatwave_day_flag",
+      "description": "热浪日标志",
+      "category": "ds8_anomaly",
+      "inputs": [
+        "tmax_c",
+        "tmax_climatology_c"
+      ],
+      "expression": "tmax_c >= max(40 degC, tmax_climatology_c + 5 degC)",
+      "dag": {
+        "op": "threshold",
+        "left": {
+          "op": "var",
+          "name": "tmax_c"
+        },
+        "condition": ">=",
+        "right": {
+          "op": "max",
+          "left": 40,
+          "right": {
+            "op": "add",
+            "left": {
+              "op": "var",
+              "name": "tmax_climatology_c"
+            },
+            "right": 5
+          }
+        }
+      },
+      "output_unit": "flag",
+      "source": "DS4+DS8",
+      "co_occurs_with": [
+        "tmax_c",
+        "tmax_anomaly_c",
+        "heatwave_duration_days"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": "同时要求绝对高温(>=40度)和相对气候态偏热(+5度)"
+    },
+    {
+      "id": "heatwave_duration_days",
+      "description": "热浪持续天数",
+      "category": "ds8_anomaly",
+      "inputs": [
+        "heatwave_day_flag"
+      ],
+      "expression": "对 heatwave_day_flag>=1 逐格逐日连续计数",
+      "dag": {
+        "op": "consecutive_count",
+        "flag_var": "heatwave_day_flag"
+      },
+      "output_unit": "days",
+      "source": "DS4+DS8",
+      "co_occurs_with": [
+        "heatwave_day_flag",
+        "tmax_c"
+      ],
+      "availability": {
+        "effective_days": 363,
+        "total_days": 365
+      },
+      "limitations": "缺少TMAX的日期不回写，最长局地72天(2025-08-16)"
+    },
+    {
+      "id": "cape",
+      "description": "对流有效位能，已折算为二维水平网格",
+      "category": "convective_stability",
+      "inputs": [],
+      "expression": "若源变量带额外层维度，先对非水平维取最大值",
+      "dag": {
+        "op": "max_over_dim",
+        "var": "cape_raw",
+        "dim": "pressureFromGroundLayer"
+      },
+      "output_unit": "J kg-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "cin",
+        "surface_lifted_index",
+        "best_lifted_index",
+        "daily_convective_precip",
+        "flash_flood_risk",
+        "pwat"
+      ],
+      "availability": {
+        "effective_days": 293,
+        "total_days": 365
+      },
+      "limitations": "越高代表潜在对流能量越强，有效覆盖293天"
+    },
+    {
+      "id": "cin",
+      "description": "对流抑制能量，越负抑制越强",
+      "category": "convective_stability",
+      "inputs": [],
+      "expression": "若源变量带额外层维度，先对非水平维取最小值",
+      "dag": {
+        "op": "min_over_dim",
+        "var": "cin_raw",
+        "dim": "pressureFromGroundLayer"
+      },
+      "output_unit": "J kg-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "cape",
+        "surface_lifted_index"
+      ],
+      "availability": {
+        "effective_days": 293,
+        "total_days": 365
+      },
+      "limitations": "接近0时更容易触发对流"
+    },
+    {
+      "id": "surface_lifted_index",
+      "description": "地面抬升指数，越低越不稳定",
+      "category": "convective_stability",
+      "inputs": [],
+      "expression": "若源变量带额外层维度，先对非水平维取最小值",
+      "dag": {
+        "op": "min_over_dim",
+        "var": "surface_lifted_index_raw",
+        "dim": "pressureFromGroundLayer"
+      },
+      "output_unit": "K",
+      "source": "DS2",
+      "co_occurs_with": [
+        "cape",
+        "best_lifted_index"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "best_lifted_index",
+      "description": "最佳四层抬升指数，越低越有利于强对流",
+      "category": "convective_stability",
+      "inputs": [],
+      "expression": "若源变量带额外层维度，先对非水平维取最小值",
+      "dag": {
+        "op": "min_over_dim",
+        "var": "best_lifted_index_raw",
+        "dim": "pressureFromGroundLayer"
+      },
+      "output_unit": "K",
+      "source": "DS2",
+      "co_occurs_with": [
+        "cape",
+        "surface_lifted_index"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "surface_pressure",
+      "description": "地面气压",
+      "category": "convective_stability",
+      "inputs": [],
+      "expression": "sp",
+      "dag": {
+        "op": "var",
+        "name": "sp"
+      },
+      "output_unit": "Pa",
+      "source": "DS2",
+      "co_occurs_with": [
+        "geopotential_height500",
+        "wind10_speed"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "orography",
+      "description": "地形高度(静态)，用于解释山地抬升和降水空间分布",
+      "category": "convective_stability",
+      "inputs": [],
+      "expression": "orog",
+      "dag": {
+        "op": "var",
+        "name": "orog"
+      },
+      "output_unit": "m",
+      "source": "DS2",
+      "co_occurs_with": [
+        "monthly_orographic_stress",
+        "surface_pressure"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": "静态地形"
+    },
+    {
+      "id": "pwat",
+      "description": "可降水量(柱总水汽)，暴雨背景核心指标",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "pwat",
+      "dag": {
+        "op": "var",
+        "name": "pwat"
+      },
+      "output_unit": "kg m-2",
+      "source": "DS2",
+      "co_occurs_with": [
+        "ivt",
+        "ivt_convergence",
+        "daily_precip_total",
+        "cape"
+      ],
+      "availability": {
+        "effective_days": 292,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ivt_u",
+      "description": "整层水汽输送纬向分量，正值偏东向输送",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "1/g * integral(q*u dp)",
+      "dag": {
+        "op": "ivt_component",
+        "direction": "u"
+      },
+      "output_unit": "kg m-1 s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "ivt",
+        "ivt_v"
+      ],
+      "availability": {
+        "effective_days": 291,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ivt_v",
+      "description": "整层水汽输送经向分量，正值偏北向输送",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "1/g * integral(q*v dp)",
+      "dag": {
+        "op": "ivt_component",
+        "direction": "v"
+      },
+      "output_unit": "kg m-1 s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "ivt",
+        "ivt_u"
+      ],
+      "availability": {
+        "effective_days": 291,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ivt",
+      "description": "整层水汽输送强度，强水汽通道识别",
+      "category": "multilevel_dynamics",
+      "inputs": [
+        "ivt_u",
+        "ivt_v"
+      ],
+      "expression": "sqrt(ivt_u^2 + ivt_v^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "ivt_u"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "ivt_v"
+            }
+          }
+        }
+      },
+      "output_unit": "kg m-1 s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "ivt_u",
+        "ivt_v",
+        "pwat",
+        "ivt_convergence"
+      ],
+      "availability": {
+        "effective_days": 291,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ivt_divergence",
+      "description": "水汽输送散度，正值代表水汽发散",
+      "category": "multilevel_dynamics",
+      "inputs": [
+        "ivt_u",
+        "ivt_v"
+      ],
+      "expression": "d(ivt_u)/dx + d(ivt_v)/dy",
+      "dag": {
+        "op": "spatial_divergence",
+        "u_var": "ivt_u",
+        "v_var": "ivt_v"
+      },
+      "output_unit": "kg m-2 s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "ivt_convergence"
+      ],
+      "availability": {
+        "effective_days": 291,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ivt_convergence",
+      "description": "水汽输送辐合，正值代表水汽汇聚有利降水",
+      "category": "multilevel_dynamics",
+      "inputs": [
+        "ivt_divergence"
+      ],
+      "expression": "-ivt_divergence",
+      "dag": {
+        "op": "neg",
+        "left": {
+          "op": "var",
+          "name": "ivt_divergence"
+        }
+      },
+      "output_unit": "kg m-2 s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "ivt",
+        "ivt_divergence",
+        "daily_precip_total",
+        "pwat",
+        "flash_flood_risk"
+      ],
+      "availability": {
+        "effective_days": 291,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "wind925_speed",
+      "description": "925 hPa风速，低层输送和近地层动力",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "sqrt(u925^2 + v925^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "u925"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "v925"
+            }
+          }
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "moisture_transport925",
+        "wind850_speed",
+        "wind10_speed"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "moisture_transport925",
+      "description": "925 hPa水汽输送强度，低层水汽输送代理",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "q925 * wind925_speed",
+      "dag": {
+        "op": "mul",
+        "left": {
+          "op": "var",
+          "name": "q925"
+        },
+        "right": {
+          "op": "var",
+          "name": "wind925_speed"
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "wind925_speed"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "wind850_speed",
+      "description": "850 hPa风速，低空急流和水汽输送",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "sqrt(u850^2 + v850^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "u850"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "v850"
+            }
+          }
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "moisture_transport850",
+        "wind925_speed",
+        "wind_shear_850_300",
+        "wind_shear_850_200"
+      ],
+      "availability": {
+        "effective_days": 291,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "moisture_transport850",
+      "description": "850 hPa水汽输送强度",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "q850 * wind850_speed",
+      "dag": {
+        "op": "mul",
+        "left": {
+          "op": "var",
+          "name": "q850"
+        },
+        "right": {
+          "op": "var",
+          "name": "wind850_speed"
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "wind850_speed"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "jet300_speed",
+      "description": "300 hPa风速，高空急流背景",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "sqrt(u300^2 + v300^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "u300"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "v300"
+            }
+          }
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "jet200_speed",
+        "wind_shear_850_300"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "jet200_speed",
+      "description": "200 hPa风速，副热带急流和高空动力",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "sqrt(u200^2 + v200^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "u200"
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "var",
+              "name": "v200"
+            }
+          }
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "jet300_speed",
+        "wind_shear_850_200"
+      ],
+      "availability": {
+        "effective_days": 292,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "wind_shear_850_300",
+      "description": "850-300 hPa垂直风切变，强对流组织化条件",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "sqrt((u300-u850)^2 + (v300-v850)^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "sub",
+              "left": {
+                "op": "var",
+                "name": "u300"
+              },
+              "right": {
+                "op": "var",
+                "name": "u850"
+              }
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "sub",
+              "left": {
+                "op": "var",
+                "name": "v300"
+              },
+              "right": {
+                "op": "var",
+                "name": "v850"
+              }
+            }
+          }
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "wind_shear_850_200",
+        "cape"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "wind_shear_850_200",
+      "description": "850-200 hPa垂直风切变，深层风切变",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "sqrt((u200-u850)^2 + (v200-v850)^2)",
+      "dag": {
+        "op": "sqrt",
+        "left": {
+          "op": "add",
+          "left": {
+            "op": "sqr",
+            "left": {
+              "op": "sub",
+              "left": {
+                "op": "var",
+                "name": "u200"
+              },
+              "right": {
+                "op": "var",
+                "name": "u850"
+              }
+            }
+          },
+          "right": {
+            "op": "sqr",
+            "left": {
+              "op": "sub",
+              "left": {
+                "op": "var",
+                "name": "v200"
+              },
+              "right": {
+                "op": "var",
+                "name": "v850"
+              }
+            }
+          }
+        }
+      },
+      "output_unit": "m s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "wind_shear_850_300",
+        "jet200_speed"
+      ],
+      "availability": {
+        "effective_days": 291,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "relative_vorticity850",
+      "description": "850 hPa相对涡度，低层旋转和天气扰动",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "dv/dx - du/dy",
+      "dag": {
+        "op": "spatial_vorticity",
+        "u_var": "u850",
+        "v_var": "v850"
+      },
+      "output_unit": "s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "absolute_vorticity850",
+        "divergence850"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "divergence850",
+      "description": "850 hPa水平散度，正值发散负值辐合",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "du/dx + dv/dy",
+      "dag": {
+        "op": "spatial_divergence",
+        "u_var": "u850",
+        "v_var": "v850"
+      },
+      "output_unit": "s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "relative_vorticity850"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "absolute_vorticity850",
+      "description": "850 hPa绝对涡度，综合地转和相对旋转背景",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "absv",
+      "dag": {
+        "op": "var",
+        "name": "absv"
+      },
+      "output_unit": "s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "relative_vorticity850"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "omega700",
+      "description": "700 hPa垂直速度，负值表示上升运动",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "omega at 700 hPa",
+      "dag": {
+        "op": "var",
+        "name": "omega700_raw"
+      },
+      "output_unit": "Pa s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "omega500",
+        "cape"
+      ],
+      "availability": {
+        "effective_days": null,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "omega500",
+      "description": "500 hPa垂直速度，中层上升/下沉运动",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "omega at 500 hPa",
+      "dag": {
+        "op": "var",
+        "name": "omega500_raw"
+      },
+      "output_unit": "Pa s-1",
+      "source": "DS2",
+      "co_occurs_with": [
+        "omega700",
+        "geopotential_height500"
+      ],
+      "availability": {
+        "effective_days": 292,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "geopotential_height500",
+      "description": "500 hPa位势高度，中层环流和脊槽背景",
+      "category": "multilevel_dynamics",
+      "inputs": [],
+      "expression": "gh500",
+      "dag": {
+        "op": "var",
+        "name": "gh500"
+      },
+      "output_unit": "gpm",
+      "source": "DS2",
+      "co_occurs_with": [
+        "omega500",
+        "surface_pressure"
+      ],
+      "availability": {
+        "effective_days": 293,
+        "total_days": 365
+      },
+      "limitations": "距平未计算：缺少压力层位势高度气候态(DS8为地面站点气候态)"
+    },
+    {
+      "id": "sst_celsius",
+      "description": "海表温度，红海和波斯湾热湿背景",
+      "category": "sst_ds10",
+      "inputs": [],
+      "expression": "analysed_sst, 源值>200时转为K-273.15",
+      "dag": {
+        "op": "where",
+        "cond": {
+          "op": "threshold",
+          "left": {
+            "op": "var",
+            "name": "analysed_sst"
+          },
+          "condition": ">",
+          "right": 200
+        },
+        "true": {
+          "op": "sub",
+          "left": {
+            "op": "var",
+            "name": "analysed_sst"
+          },
+          "right": 273.15
+        },
+        "false": {
+          "op": "var",
+          "name": "analysed_sst"
+        }
+      },
+      "output_unit": "degC",
+      "source": "SST",
+      "co_occurs_with": [
+        "rh2m",
+        "heat_index_c"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365
+      },
+      "limitations": "红海和波斯湾高海温为沿海湿热提供背景条件"
+    },
+    {
+      "id": "ds10_daily_total",
+      "description": "DS10卫星日降水，最近邻对齐到指标网格",
+      "category": "sst_ds10",
+      "inputs": [],
+      "expression": "daily_total, 最近邻重采样",
+      "dag": {
+        "op": "nearest_resample",
+        "var": "ds10_daily_total_raw"
+      },
+      "output_unit": "mm",
+      "source": "DS10",
+      "co_occurs_with": [
+        "ds10_max_1h",
+        "ds10_max_3h",
+        "ds10_ds2_precip_diff",
+        "ds10_ds2_precip_ratio",
+        "daily_precip_total"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": "高频卫星降水日聚合，Q4(10-12月)缺测"
+    },
+    {
+      "id": "ds10_max_30min",
+      "description": "DS10 30分钟最大降水",
+      "category": "sst_ds10",
+      "inputs": [],
+      "expression": "max_30min, 最近邻重采样",
+      "dag": {
+        "op": "nearest_resample",
+        "var": "ds10_max_30min_raw"
+      },
+      "output_unit": "mm",
+      "source": "DS10",
+      "co_occurs_with": [
+        "ds10_max_1h",
+        "flash_flood_risk"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ds10_max_1h",
+      "description": "DS10 1小时最大降水，山洪短历时降水核心候选",
+      "category": "sst_ds10",
+      "inputs": [],
+      "expression": "max_1h, 最近邻重采样",
+      "dag": {
+        "op": "nearest_resample",
+        "var": "ds10_max_1h_raw"
+      },
+      "output_unit": "mm",
+      "source": "DS10",
+      "co_occurs_with": [
+        "ds10_max_30min",
+        "ds10_max_3h",
+        "flash_flood_risk",
+        "daily_precip_total"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": "已纳入 flash_flood_risk 评分"
+    },
+    {
+      "id": "ds10_max_3h",
+      "description": "DS10 3小时最大降水",
+      "category": "sst_ds10",
+      "inputs": [],
+      "expression": "max_3h, 最近邻重采样",
+      "dag": {
+        "op": "nearest_resample",
+        "var": "ds10_max_3h_raw"
+      },
+      "output_unit": "mm",
+      "source": "DS10",
+      "co_occurs_with": [
+        "ds10_max_1h",
+        "ds10_max_6h"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ds10_max_6h",
+      "description": "DS10 6小时最大降水",
+      "category": "sst_ds10",
+      "inputs": [],
+      "expression": "max_6h, 最近邻重采样",
+      "dag": {
+        "op": "nearest_resample",
+        "var": "ds10_max_6h_raw"
+      },
+      "output_unit": "mm",
+      "source": "DS10",
+      "co_occurs_with": [
+        "ds10_max_3h"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ds10_rainy_steps",
+      "description": "DS10有雨时次数，表示日内降水持续性",
+      "category": "sst_ds10",
+      "inputs": [],
+      "expression": "rainy_steps, 最近邻重采样",
+      "dag": {
+        "op": "nearest_resample",
+        "var": "ds10_rainy_steps_raw"
+      },
+      "output_unit": "steps",
+      "source": "DS10",
+      "co_occurs_with": [
+        "ds10_daily_total"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ds10_ds2_precip_diff",
+      "description": "DS10与DS2日降水差值，正值DS10偏高",
+      "category": "sst_ds10",
+      "inputs": [
+        "ds10_daily_total",
+        "daily_precip_total"
+      ],
+      "expression": "ds10_daily_total - daily_precip_total",
+      "dag": {
+        "op": "sub",
+        "left": {
+          "op": "var",
+          "name": "ds10_daily_total"
+        },
+        "right": {
+          "op": "var",
+          "name": "daily_precip_total"
+        }
+      },
+      "output_unit": "mm",
+      "source": "DS10+DS2",
+      "co_occurs_with": [
+        "ds10_ds2_precip_ratio",
+        "ds10_ds2_heavy_rain_overlap"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ds10_ds2_precip_ratio",
+      "description": "DS10/DS2日降水比值，识别两套降水估计偏差",
+      "category": "sst_ds10",
+      "inputs": [
+        "ds10_daily_total",
+        "daily_precip_total"
+      ],
+      "expression": "ds10_daily_total / daily_precip_total",
+      "dag": {
+        "op": "div",
+        "left": {
+          "op": "var",
+          "name": "ds10_daily_total"
+        },
+        "right": {
+          "op": "var",
+          "name": "daily_precip_total"
+        }
+      },
+      "output_unit": "1",
+      "source": "DS10+DS2",
+      "co_occurs_with": [
+        "ds10_ds2_precip_diff"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": null
+    },
+    {
+      "id": "ds10_ds2_heavy_rain_overlap",
+      "description": "DS10与DS2强降水重叠标志",
+      "category": "sst_ds10",
+      "inputs": [
+        "ds10_daily_total",
+        "daily_precip_total"
+      ],
+      "expression": "两者均>=10mm时为1",
+      "dag": {
+        "op": "and_",
+        "left": {
+          "op": "threshold",
+          "left": {
+            "op": "var",
+            "name": "ds10_daily_total"
+          },
+          "condition": ">=",
+          "right": 10
+        },
+        "right": {
+          "op": "threshold",
+          "left": {
+            "op": "var",
+            "name": "daily_precip_total"
+          },
+          "condition": ">=",
+          "right": 10
+        }
+      },
+      "output_unit": "flag",
+      "source": "DS10+DS2",
+      "co_occurs_with": [
+        "ds10_ds2_precip_diff",
+        "daily_precip_total"
+      ],
+      "availability": {
+        "effective_days": 273,
+        "total_days": 365
+      },
+      "limitations": "用于筛选两套数据共同支持的强降水网格"
+    },
+    {
+      "id": "flash_flood_risk",
+      "description": "山洪初筛分数(0-5)，可用条件阈值标志求和",
+      "category": "composite",
+      "inputs": [
+        "daily_precip_total",
+        "convective_precip_ratio",
+        "cape",
+        "wind10_speed",
+        "ds10_max_1h"
+      ],
+      "expression": "SUM of 5 threshold flags",
+      "dag": {
+        "op": "sum_flags",
+        "flags": [
+          {
+            "indicator": "daily_precip_total",
+            "condition": ">=",
+            "value": 10
+          },
+          {
+            "indicator": "convective_precip_ratio",
+            "condition": ">=",
+            "value": 0.5
+          },
+          {
+            "indicator": "cape",
+            "condition": ">=",
+            "value": 1000
+          },
+          {
+            "indicator": "wind10_speed",
+            "condition": ">=",
+            "value": 10
+          },
+          {
+            "indicator": "ds10_max_1h",
+            "condition": ">=",
+            "value": 10
+          }
+        ]
+      },
+      "output_unit": "score",
+      "source": "DS2+DS10",
+      "co_occurs_with": [
+        "daily_precip_total",
+        "cape",
+        "ds10_max_1h",
+        "ivt_convergence",
+        "pwat"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365
+      },
+      "limitations": "CAPE已折算二维后参与评分。DS10缺测时短时强降水项视为缺测。分数越高越多触发因子同时满足"
+    }
+  ]
+}

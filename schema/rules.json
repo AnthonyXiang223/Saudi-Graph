@@ -1,0 +1,101 @@
+{
+  "meta": {
+    "description": "Business rules for extreme event early warning detection – Saudi Arabia knowledge graph",
+    "version": "1.0.0",
+    "last_updated": "2026-07-07",
+    "weighted_logic": "Each condition contributes its weight (0-1) when satisfied. Total score = sum of satisfied weights. Normalised to [0,1] by dividing by the sum of all available weights (accounting for fallback drops)."
+  },
+  "rules": [
+    {
+      "id": "flash_flood_weighted",
+      "hazard_type": "flash_flood",
+      "conditions": [
+        { "indicator": "flash_flood_risk",    "op": ">=", "value": 3,    "weight": 0.30, "primary": true },
+        { "indicator": "daily_precip_total",  "op": ">=", "value": 10,   "weight": 0.25 },
+        { "indicator": "cape",                "op": ">=", "value": 1000, "weight": 0.20 },
+        { "indicator": "ds10_max_1h",         "op": ">=", "value": 10,   "weight": 0.15 },
+        { "indicator": "ivt_convergence",     "op": ">",  "value": 0,    "weight": 0.10 }
+      ],
+      "connectivity": 4,
+      "min_cluster_size": 3,
+      "severity": [
+        { "label": "low",     "range": [0.0, 0.3] },
+        { "label": "medium",  "range": [0.3, 0.6] },
+        { "label": "high",    "range": [0.6, 0.8] },
+        { "label": "extreme", "range": [0.8, 1.0] }
+      ],
+      "fallback": {
+        "strategy": "drop_condition",
+        "missing_indicator": "ds10_max_1h",
+        "confidence_penalty": 0.15,
+        "description": "ds10_max_1h frequently unavailable in Q4 (Oct–Dec). When missing, drop the condition and subtract 0.15 from the normalised score. Re-normalise over remaining weights."
+      }
+    },
+    {
+      "id": "extreme_heat_weighted",
+      "hazard_type": "extreme_heat",
+      "conditions": [
+        { "indicator": "heatwave_day_flag",      "op": ">=", "value": 1,  "weight": 0.30, "primary": true },
+        { "indicator": "heatwave_duration_days", "op": ">=", "value": 3,  "weight": 0.30 },
+        { "indicator": "tmax_c",                 "op": ">=", "value": 45, "weight": 0.25 },
+        { "indicator": "heat_index_c",           "op": ">=", "value": 40, "weight": 0.15 }
+      ],
+      "connectivity": 4,
+      "min_cluster_size": 5,
+      "severity": [
+        { "label": "caution",   "range": [0.0, 0.3] },
+        { "label": "warning",   "range": [0.3, 0.6] },
+        { "label": "alert",     "range": [0.6, 0.8] },
+        { "label": "emergency", "range": [0.8, 1.0] }
+      ],
+      "fallback": null
+    },
+    {
+      "id": "dust_storm_weighted",
+      "hazard_type": "dust_storm",
+      "conditions": [
+        { "indicator": "wind10_speed",           "op": ">=", "value": 12, "weight": 0.35, "primary": true },
+        { "indicator": "dewpoint_depression_c",  "op": ">=", "value": 20, "weight": 0.25 },
+        { "indicator": "rh2m",                   "op": "<",  "value": 25, "weight": 0.25 },
+        { "indicator": "wind_shear_850_200",     "op": ">=", "value": 30, "weight": 0.15 }
+      ],
+      "connectivity": 8,
+      "min_cluster_size": 10,
+      "severity": [
+        { "label": "low",      "range": [0.0, 0.3] },
+        { "label": "moderate", "range": [0.3, 0.6] },
+        { "label": "high",     "range": [0.6, 0.8] },
+        { "label": "severe",   "range": [0.8, 1.0] }
+      ],
+      "fallback": {
+        "strategy": "drop_condition",
+        "missing_indicator": "wind_shear_850_200",
+        "confidence_penalty": 0.10,
+        "description": "Upper-air wind shear data may be unavailable in sparse-observation periods. When missing, drop the condition and subtract 0.10 from the normalised score."
+      }
+    },
+    {
+      "id": "coastal_humid_heat_weighted",
+      "hazard_type": "coastal_humid_heat",
+      "conditions": [
+        { "indicator": "sst_celsius",    "op": ">=", "value": 30, "weight": 0.30, "primary": true },
+        { "indicator": "rh2m",           "op": ">=", "value": 60, "weight": 0.30 },
+        { "indicator": "heat_index_c",   "op": ">=", "value": 35, "weight": 0.25 },
+        { "indicator": "t2m_c",          "op": ">=", "value": 30, "weight": 0.15 }
+      ],
+      "connectivity": 4,
+      "min_cluster_size": 3,
+      "region_filter": {
+        "applies_to": ["red_sea", "persian_gulf"],
+        "description": "This rule only evaluates grid cells within the Red Sea and Persian Gulf coastal zones. Grid cells outside these regions are excluded from detection and clustering."
+      },
+      "severity": [
+        { "label": "caution",   "range": [0.0, 0.3] },
+        { "label": "warning",   "range": [0.3, 0.6] },
+        { "label": "alert",     "range": [0.6, 0.8] },
+        { "label": "emergency", "range": [0.8, 1.0] }
+      ],
+      "fallback": null
+    }
+  ]
+}

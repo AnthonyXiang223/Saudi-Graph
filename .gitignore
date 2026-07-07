@@ -1,0 +1,23 @@
+# NetCDF data files (5GB+)
+indicators/
+*.nc
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Flask
+instance/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.log

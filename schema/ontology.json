@@ -1,0 +1,100 @@
+{
+  "name": "Saudi Extreme Event Knowledge Graph Ontology",
+  "version": "1.0",
+  "description": "MAZU 多灾种早期预警知识图谱本体定义 — 沙特区域",
+
+  "node_types": {
+    "Indicator": {
+      "description": "极端事件指标，每个指标一个节点，携带元数据和算子信息",
+      "key_field": "id",
+      "properties": ["id", "description", "category", "expression", "dag", "output_unit", "source", "availability", "limitations"],
+      "node_count_estimate": 91,
+      "examples": ["daily_precip_total", "cape", "heatwave_duration_days", "flash_flood_risk"]
+    },
+    "DataSource": {
+      "description": "原始气象数据来源",
+      "key_field": "id",
+      "properties": ["id", "full_name", "product", "resolution", "temporal_coverage"],
+      "node_count_estimate": 6,
+      "examples": ["DS1_ERA5_monthly", "DS2_ERA5_daily", "DS4_ERA5_extremes", "DS8_GHCN_climatology", "DS10_GPM_IMERG", "SST_OSTIA"]
+    },
+    "HazardType": {
+      "description": "灾害类型",
+      "key_field": "id",
+      "properties": ["id", "display_name", "description", "typical_season"],
+      "node_count_estimate": 4,
+      "examples": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+    },
+    "Region": {
+      "description": "地理分区，带 lat/lon 边界",
+      "key_field": "id",
+      "properties": ["id", "display_name", "lat_min", "lat_max", "lon_min", "lon_max"],
+      "node_count_estimate": 6,
+      "examples": ["saudi_bbox", "red_sea", "persian_gulf", "north_saudi", "central_saudi", "south_saudi"]
+    },
+    "Event": {
+      "description": "检测到的极端事件实例（每个连通域一个事件），运行时动态创建",
+      "key_field": "event_id",
+      "properties": ["event_id", "date", "hazard_type", "severity", "confidence", "cluster_id", "affected_cells", "area_km2", "peak_risk", "centroid_lat", "centroid_lon", "region", "trigger_indicators"],
+      "node_count_estimate": "dynamic",
+      "examples": ["event_20250819_flash_flood_001"]
+    }
+  },
+
+  "relationship_types": {
+    "derived_from": {
+      "from": "Indicator",
+      "to": "Indicator",
+      "description": "算子依赖链：目标指标由源指标计算得到",
+      "cardinality": "many-to-many",
+      "direction": "directed",
+      "auto_generated_from": "operators.json → inputs 字段"
+    },
+    "co_occurs_with": {
+      "from": "Indicator",
+      "to": "Indicator",
+      "description": "物理上需联合解释的指标对，如 daily_precip_total 和 ds10_max_1h 在山洪中互补",
+      "cardinality": "many-to-many",
+      "direction": "bidirectional",
+      "auto_generated_from": "operators.json → co_occurs_with 字段"
+    },
+    "sourced_from": {
+      "from": "Indicator",
+      "to": "DataSource",
+      "description": "指标的原始数据来源",
+      "cardinality": "many-to-one",
+      "direction": "directed",
+      "auto_generated_from": "operators.json → source 字段"
+    },
+    "contributes_to": {
+      "from": "Indicator",
+      "to": "HazardType",
+      "description": "指标对该类灾害有判别贡献",
+      "cardinality": "many-to-many",
+      "direction": "directed",
+      "auto_generated_from": "rules.json → conditions[].indicator"
+    },
+    "detects": {
+      "from": "Rule",
+      "to": "HazardType",
+      "description": "规则用于检测该类灾害",
+      "cardinality": "many-to-one",
+      "direction": "directed",
+      "auto_generated_from": "rules.json → hazard_type"
+    },
+    "instance_of": {
+      "from": "Event",
+      "to": "HazardType",
+      "description": "事件属于某类灾害",
+      "cardinality": "many-to-one",
+      "direction": "directed"
+    },
+    "located_in": {
+      "from": "Event",
+      "to": "Region",
+      "description": "事件发生在某地理区域（从连通域质心坐标推断）",
+      "cardinality": "many-to-one",
+      "direction": "directed"
+    }
+  }
+}
