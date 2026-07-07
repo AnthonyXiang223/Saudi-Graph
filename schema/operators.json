@@ -21,7 +21,8 @@
       ],
       "availability": {
         "effective_days": 365,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": "月背景，不反映逐日变化"
     },
@@ -48,7 +49,8 @@
       ],
       "availability": {
         "effective_days": 365,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": "days_in_month 为外部参数(28/29/30/31)"
     },
@@ -69,8 +71,9 @@
         "monthly_convective_precip_ratio"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -90,8 +93,9 @@
         "monthly_convective_precip"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -121,8 +125,9 @@
         "monthly_convective_precip"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": "分母 monthly_precip_total 近零时不稳定的比值"
     },
@@ -149,8 +154,9 @@
         "monthly_heat_stress_index"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": "分母潜热通量小时会放大异常，建议加阈值"
     },
@@ -178,8 +184,9 @@
         "monthly_net_radiation"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -207,8 +214,9 @@
         "monthly_net_radiation"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -239,8 +247,9 @@
         "monthly_lw_net"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -282,8 +291,9 @@
         "monthly_bowen_ratio"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -319,8 +329,9 @@
         "monthly_orographic_stress"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -356,8 +367,9 @@
         "monthly_wind_stress_mag"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -377,8 +389,9 @@
         "monthly_uvb_clear_ratio"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -405,8 +418,9 @@
         "monthly_uvb_flux"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -429,8 +443,9 @@
         "daily_precip_total"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -451,8 +466,9 @@
         "rh2m"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -473,8 +489,9 @@
         "daily_large_scale_precip"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -496,8 +513,9 @@
         "cape"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": null
     },
@@ -521,8 +539,9 @@
         "daily_precip_total"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 2,
+        "total_days": 365,
+        "coverage_pct": 0.5
       },
       "limitations": "目前有效日很少，不宜作为主降水指标"
     },
@@ -551,8 +570,9 @@
         "cape"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 2,
+        "total_days": 365,
+        "coverage_pct": 0.5
       },
       "limitations": "需和总降水共同解释，分母 prate 近零时不稳定"
     },
@@ -577,7 +597,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -600,7 +621,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -622,7 +644,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -650,8 +673,9 @@
         "vpd_kpa"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": "极端值较多，建议加分母阈值后再用于建模"
     },
@@ -679,8 +703,9 @@
         "net_radiation"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -708,8 +733,9 @@
         "net_radiation"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -740,8 +766,9 @@
         "lw_net"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -785,8 +812,9 @@
         "heat_index_c"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -817,7 +845,8 @@
       ],
       "availability": {
         "effective_days": 362,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.2
       },
       "limitations": null
     },
@@ -843,8 +872,9 @@
         "sh2m"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -876,8 +906,9 @@
         "wind10_speed"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 362,
+        "total_days": 365,
+        "coverage_pct": 99.2
       },
       "limitations": null
     },
@@ -902,7 +933,8 @@
       ],
       "availability": {
         "effective_days": 364,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -929,7 +961,8 @@
       ],
       "availability": {
         "effective_days": 362,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.2
       },
       "limitations": "派生前已屏蔽填充值和非物理输入"
     },
@@ -957,7 +990,8 @@
       ],
       "availability": {
         "effective_days": 362,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.2
       },
       "limitations": "健康热风险指标，湿热条件下高于气温"
     },
@@ -979,8 +1013,9 @@
         "qmin_2m"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -1005,8 +1040,9 @@
         "t2m_c"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 362,
+        "total_days": 365,
+        "coverage_pct": 99.2
       },
       "limitations": "派生前已屏蔽填充值"
     },
@@ -1046,7 +1082,8 @@
       ],
       "availability": {
         "effective_days": 364,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -1076,7 +1113,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1103,7 +1141,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1136,7 +1175,8 @@
       ],
       "availability": {
         "effective_days": 362,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.2
       },
       "limitations": null
     },
@@ -1157,8 +1197,9 @@
         "qmin_2m"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 363,
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1179,8 +1220,9 @@
         "qmax_2m"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 363,
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1204,7 +1246,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": "DS8为站点气候态非格点场，沙特bbox内仅7个PRE站点，最近邻映射"
     },
@@ -1225,7 +1268,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1257,7 +1301,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1294,8 +1339,9 @@
         "daily_precip_anomaly"
       ],
       "availability": {
-        "effective_days": 363,
-        "total_days": 365
+        "effective_days": 272,
+        "total_days": 365,
+        "coverage_pct": 74.5
       },
       "limitations": "不适合单独作为预警阈值，建议优先使用 daily_precip_anomaly 和 daily_precip_total"
     },
@@ -1317,8 +1363,9 @@
         "t2m_climatology_station_distance_km"
       ],
       "availability": {
-        "effective_days": 362,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": "TAVG在bbox内约45个站点"
     },
@@ -1338,8 +1385,9 @@
         "t2m_climatology_c"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 364,
+        "total_days": 365,
+        "coverage_pct": 99.7
       },
       "limitations": null
     },
@@ -1372,7 +1420,8 @@
       ],
       "availability": {
         "effective_days": 362,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.2
       },
       "limitations": null
     },
@@ -1395,7 +1444,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": "TMAX站点较少，沙特bbox内仅约11个有效站点，必须和距平一起查看"
     },
@@ -1415,8 +1465,9 @@
         "tmax_climatology_c"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 363,
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1449,7 +1500,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": null
     },
@@ -1491,7 +1543,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": "同时要求绝对高温(>=40度)和相对气候态偏热(+5度)"
     },
@@ -1515,7 +1568,8 @@
       ],
       "availability": {
         "effective_days": 363,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 99.5
       },
       "limitations": "缺少TMAX的日期不回写，最长局地72天(2025-08-16)"
     },
@@ -1542,7 +1596,8 @@
       ],
       "availability": {
         "effective_days": 293,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 80.3
       },
       "limitations": "越高代表潜在对流能量越强，有效覆盖293天"
     },
@@ -1565,7 +1620,8 @@
       ],
       "availability": {
         "effective_days": 293,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 80.3
       },
       "limitations": "接近0时更容易触发对流"
     },
@@ -1587,8 +1643,9 @@
         "best_lifted_index"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 292,
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -1610,8 +1667,9 @@
         "surface_lifted_index"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 292,
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -1632,8 +1690,9 @@
         "wind10_speed"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 292,
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -1654,8 +1713,9 @@
         "surface_pressure"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 292,
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": "静态地形"
     },
@@ -1679,7 +1739,8 @@
       ],
       "availability": {
         "effective_days": 292,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -1701,7 +1762,8 @@
       ],
       "availability": {
         "effective_days": 291,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1723,7 +1785,8 @@
       ],
       "availability": {
         "effective_days": 291,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1766,7 +1829,8 @@
       ],
       "availability": {
         "effective_days": 291,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1791,7 +1855,8 @@
       ],
       "availability": {
         "effective_days": 291,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1821,7 +1886,8 @@
       ],
       "availability": {
         "effective_days": 291,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1859,8 +1925,9 @@
         "wind10_speed"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 291,
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1887,8 +1954,9 @@
         "wind925_speed"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 291,
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1928,7 +1996,8 @@
       ],
       "availability": {
         "effective_days": 291,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1955,8 +2024,9 @@
         "wind850_speed"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 291,
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -1993,8 +2063,9 @@
         "wind_shear_850_300"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 292,
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -2032,7 +2103,8 @@
       ],
       "availability": {
         "effective_days": 292,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -2083,8 +2155,9 @@
         "cape"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 291,
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -2136,7 +2209,8 @@
       ],
       "availability": {
         "effective_days": 291,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -2158,8 +2232,9 @@
         "divergence850"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 291,
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -2180,8 +2255,9 @@
         "relative_vorticity850"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 291,
+        "total_days": 365,
+        "coverage_pct": 79.7
       },
       "limitations": null
     },
@@ -2201,8 +2277,9 @@
         "relative_vorticity850"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 293,
+        "total_days": 365,
+        "coverage_pct": 80.3
       },
       "limitations": null
     },
@@ -2223,8 +2300,9 @@
         "cape"
       ],
       "availability": {
-        "effective_days": null,
-        "total_days": 365
+        "effective_days": 292,
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -2246,7 +2324,8 @@
       ],
       "availability": {
         "effective_days": 292,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 80.0
       },
       "limitations": null
     },
@@ -2268,7 +2347,8 @@
       ],
       "availability": {
         "effective_days": 293,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 80.3
       },
       "limitations": "距平未计算：缺少压力层位势高度气候态(DS8为地面站点气候态)"
     },
@@ -2310,7 +2390,8 @@
       ],
       "availability": {
         "effective_days": 365,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": "红海和波斯湾高海温为沿海湿热提供背景条件"
     },
@@ -2335,7 +2416,8 @@
       ],
       "availability": {
         "effective_days": 273,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 74.8
       },
       "limitations": "高频卫星降水日聚合，Q4(10-12月)缺测"
     },
@@ -2357,7 +2439,8 @@
       ],
       "availability": {
         "effective_days": 273,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 74.8
       },
       "limitations": null
     },
@@ -2381,7 +2464,8 @@
       ],
       "availability": {
         "effective_days": 273,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 74.8
       },
       "limitations": "已纳入 flash_flood_risk 评分"
     },
@@ -2403,7 +2487,8 @@
       ],
       "availability": {
         "effective_days": 273,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 74.8
       },
       "limitations": null
     },
@@ -2424,7 +2509,8 @@
       ],
       "availability": {
         "effective_days": 273,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 74.8
       },
       "limitations": null
     },
@@ -2445,7 +2531,8 @@
       ],
       "availability": {
         "effective_days": 273,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 74.8
       },
       "limitations": null
     },
@@ -2476,8 +2563,9 @@
         "ds10_ds2_heavy_rain_overlap"
       ],
       "availability": {
-        "effective_days": 273,
-        "total_days": 365
+        "effective_days": 271,
+        "total_days": 365,
+        "coverage_pct": 74.2
       },
       "limitations": null
     },
@@ -2507,8 +2595,9 @@
         "ds10_ds2_precip_diff"
       ],
       "availability": {
-        "effective_days": 273,
-        "total_days": 365
+        "effective_days": 270,
+        "total_days": 365,
+        "coverage_pct": 74.0
       },
       "limitations": null
     },
@@ -2549,8 +2638,9 @@
         "daily_precip_total"
       ],
       "availability": {
-        "effective_days": 273,
-        "total_days": 365
+        "effective_days": 271,
+        "total_days": 365,
+        "coverage_pct": 74.2
       },
       "limitations": "用于筛选两套数据共同支持的强降水网格"
     },
@@ -2607,7 +2697,8 @@
       ],
       "availability": {
         "effective_days": 365,
-        "total_days": 365
+        "total_days": 365,
+        "coverage_pct": 100.0
       },
       "limitations": "CAPE已折算二维后参与评分。DS10缺测时短时强降水项视为缺测。分数越高越多触发因子同时满足"
     }
