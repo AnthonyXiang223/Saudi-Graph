@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>沙特极端事件知识图谱 | DMDO-OWL | MAZU</title>
+<script src="/static/vis-network.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1923; color: #e0e0e0; height: 100vh; display: flex; overflow: hidden; }
+
+#panel { width: 350px; min-width: 350px; background: #1a2530; display: flex; flex-direction: column; border-right: 1px solid #2a3a48; }
+.panel-header { padding: 14px 16px 10px; border-bottom: 1px solid #2a3a48; }
+.panel-header h2 { font-size: 16px; color: #8ab4f8; }
+.panel-header .sub { font-size: 11px; color: #6b7280; margin-top: 4px; }
+.panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+
+#detail { display: none; }
+#detail.show { display: block; }
+.detail-card { background: #1e2d3d; border-radius: 10px; border: 1px solid #2a3a48; overflow: hidden; margin-bottom: 8px; }
+.detail-card .head { padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+.detail-card .head .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.detail-card .head .title { font-size: 14px; font-weight: 600; word-break: break-all; }
+.detail-card .meta { padding: 0 14px 12px; font-size: 12px; color: #9ca3af; line-height: 1.6; }
+.detail-card .section { padding: 10px 14px; border-top: 1px solid #2a3a48; }
+.detail-card .section h4 { font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; letter-spacing: 0.5px; }
+.detail-card .section .rel-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; margin: 2px 0; font-size: 12px; cursor: pointer; border-radius: 4px; }
+.detail-card .section .rel-item:hover { background: #2a3a58; }
+.detail-card .section .rel-item .rdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.detail-card .dag-box { font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; padding: 10px; background: #0f1923; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; color: #8ab4f8; max-height: 200px; overflow-y: auto; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 500; margin: 1px 2px; }
+.chip.HazardType { background: #dc262633; color: #f87171; }
+.chip.Rule { background: #8b5cf633; color: #a78bfa; }
+.chip.DataSource { background: #10b98133; color: #34d399; }
+
+#searchBox { padding: 8px 12px; }
+#searchBox input { width: 100%; background: #162230; border: 1px solid #3a4a58; color: #e0e0e0; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+#searchResults { max-height: 200px; overflow-y: auto; margin: 0 12px; }
+#searchResults .sr { font-size: 12px; padding: 7px 10px; cursor: pointer; border-radius: 4px; margin: 2px 0; }
+#searchResults .sr:hover { background: #1e3040; }
+#searchResults .sr .srid { color: #8ab4f8; font-weight: 500; }
+
+#graph-wrap { flex: 1; position: relative; }
+#graph { width: 100%; height: 100%; }
+.gtoolbar { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex; gap: 5px; }
+.gtoolbar button { background: #1e2d3d; border: 1px solid #3a4a58; color: #c0c0c0; padding: 5px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+.gtoolbar button:hover { background: #2a3a58; color: #fff; }
+#status { position: absolute; bottom: 0; left: 0; right: 0; height: 28px; background: #1a2530; display: flex; align-items: center; padding: 0 12px; font-size: 11px; color: #6b7280; justify-content: space-between; }
+
+.detect-bar { padding: 8px 12px; background: #162230; display: flex; gap: 6px; align-items: center; }
+.detect-bar input, .detect-bar select { background: #0f1923; border: 1px solid #3a4a58; color: #e0e0e0; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+.detect-bar button { background: #2563eb; border: none; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+#eventList { padding: 4px 12px 8px; max-height: 140px; overflow-y: auto; font-size: 11px; }
+.ev { padding: 5px 8px; margin: 3px 0; background: #162230; border-radius: 4px; border-left: 3px solid #3b82f6; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div class="panel-header">
+    <h2>MAZU · DMDO-OWL 知识图谱</h2>
+    <div class="sub">W3C 标准 · SPARQL 查询 · 7784 三元组</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+      <span class="chip HazardType">4 灾害类型</span>
+      <span class="chip Rule">4 检测规则</span>
+      <span class="chip DataSource">6 数据源</span>
+    </div>
+  </div>
+
+  <div id="searchBox"><input type="text" id="searchInput" placeholder="SPARQL 搜索指标..." oninput="doSearch()"></div>
+  <div id="searchResults"></div>
+
+  <div style="font-size:11px;color:#6b7280;padding:4px 14px;display:flex;gap:16px;">
+    <span>节点: <b id="nc">-</b></span><span>边: <b id="ec">-</b></span><span>三元组: <b id="tc">-</b></span>
+  </div>
+
+  <div class="panel-body" id="emptyHint" style="color:#6b7280;font-size:13px;text-align:center;padding-top:40px;">
+    点击图中节点<br>查看 SPARQL 查询结果
+  </div>
+
+  <div class="panel-body" id="detail"></div>
+
+  <div class="detect-bar">
+    <input type="text" id="evDate" value="2025-08-19" style="width:90px;">
+    <select id="evHazard"><option value="">全部</option><option value="flash_flood">山洪</option><option value="extreme_heat">高温</option><option value="dust_storm">沙尘</option><option value="coastal_humid_heat">沿海</option></select>
+    <button onclick="runDetect()">检测</button>
+  </div>
+  <div id="eventList"></div>
+</div>
+
+<div id="graph-wrap">
+  <div id="graph"></div>
+  <div class="gtoolbar">
+    <button onclick="fitGraph()">重置</button>
+    <button onclick="showAll()">全部</button>
+    <button onclick="focusByType('HazardType')">灾害</button>
+    <button onclick="focusByType('DataSource')">数据源</button>
+  </div>
+  <div id="status"><span>就绪 · 点击节点 SPARQL 查询</span><span style="color:#10b981;">DMDO-OWL</span></div>
+</div>
+
+<script>
+let network, allNodes=[], allEdges=[];
+const TYPE_COLOR = { Indicator:"#3b82f6", DataSource:"#10b981", HazardType:"#ef4444", Region:"#f59e0b", Rule:"#8b5cf6", Event:"#f472b6" };
+
+async function init() {
+  setStatus("SPARQL 查询图谱...");
+  const r = await fetch("/api/sparql/summary");
+  const d = await r.json();
+  allNodes = d.nodes; allEdges = d.edges;
+  document.getElementById("nc").textContent = d.total_nodes;
+  document.getElementById("ec").textContent = d.total_edges;
+  document.getElementById("tc").textContent = d.triples;
+  draw(allNodes, allEdges);
+  setStatus(`SPARQL 就绪 · ${d.triples} 三元组 · ${d.total_nodes} 节点`);
+}
+
+function draw(nodes, edges) {
+  const nodeArr = nodes.map(n => ({
+    id: n.id, label: n.id.length>28 ? n.id.slice(0,28)+"…" : n.id,
+    group: n.type, title: n.title||n.id,
+    color: { background: TYPE_COLOR[n.type]||"#6b7280", border: "#0000" },
+    font: { size: 9, color: "#c0c0c0" },
+    shape: n.type==="HazardType"?"triangle":n.type==="Rule"?"diamond":n.type==="DataSource"?"square":"dot",
+    size: n.type==="HazardType"?20:n.type==="DataSource"?14:n.type==="Rule"?12:7,
+  }));
+  const edgeArr = edges.map(e => ({
+    from: e.from, to: e.to, label: e.label,
+    color: { color: e.label==="derived_from"?"#3b82f6":e.label==="co_occurs_with"?"#8b5cf6":e.label==="causes"?"#ef4444":"#6b7280" },
+    font: { size: 8 }, arrows: e.arrows||"to", width: e.label==="derived_from"?2:1,
+  }));
+  network = new vis.Network(document.getElementById("graph"),
+    { nodes: new vis.DataSet(nodeArr), edges: new vis.DataSet(edgeArr) },
+    { physics: { solver:"forceAtlas2Based", forceAtlas2Based:{ gravitationalConstant:-55, springLength:130 } },
+      interaction: { hover:true }, groups: {
+        Indicator: { color:{background:"#3b82f6",border:"#3b82f6"} },
+        DataSource: { color:{background:"#10b981",border:"#10b981"} },
+        HazardType: { color:{background:"#ef4444",border:"#ef4444"} },
+        Region: { color:{background:"#f59e0b",border:"#f59e0b"} },
+        Rule: { color:{background:"#8b5cf6",border:"#8b5cf6"} },
+      }}
+  );
+  network.on("click", p => { if(p.nodes.length) showDetail(p.nodes[0]); });
+  network.on("doubleClick", p => { if(p.nodes.length) network.focus(p.nodes[0],{scale:1.8,animation:true}); });
+}
+
+function fitGraph() { network && network.fit({animation:true}); }
+function showAll() { draw(allNodes, allEdges); }
+function focusByType(t) {
+  const ids = allNodes.filter(n=>n.type===t).map(n=>n.id);
+  const re = allEdges.filter(e=>ids.includes(e.from)||ids.includes(e.to));
+  const rn = allNodes.filter(n=>ids.includes(n.id)||re.some(e=>e.from===n.id||e.to===n.id));
+  draw(rn, re);
+}
+
+// ── SPARQL-powered detail ──
+async function showDetail(nodeId) {
+  const node = allNodes.find(n=>n.id===nodeId);
+  if (!node) return;
+  network && network.focus(nodeId, {scale:1.5,animation:true});
+  setStatus(`SPARQL: ${nodeId} (${node.type})`);
+
+  let html = `<div class="detail-card">`;
+  const c = TYPE_COLOR[node.type]||"#6b7280";
+  html += `<div class="head"><div class="dot" style="background:${c}"></div><div class="title">${nodeId}</div></div>`;
+  html += `<div class="meta">类型: DMDO/${node.type}</div>`;
+
+  if (node.type === "Indicator") {
+    try {
+      const r = await fetch(`/api/sparql/indicator/${nodeId}`);
+      const d = await r.json();
+      const dt = d.detail || {};
+      if (dt.description) html += `<div class="meta">${dt.description}</div>`;
+      if (dt.expression) html += `<div class="section"><h4>计算公式</h4><div class="dag-box">${dt.expression}</div></div>`;
+      if (dt.dag) html += `<div class="section"><h4>DAG (可执行)</h4><div class="dag-box">${dt.dag}</div></div>`;
+      if (d.co_occurring && d.co_occurring.length>0) {
+        html += `<div class="section"><h4>联合解释 (${d.co_occurring.length})</h4>`;
+        d.co_occurring.forEach(c => { html += `<div class="rel-item" onclick="showDetail('${c}')"><span class="rdot" style="background:#8b5cf6"></span>${c}</div>`; });
+        html += `</div>`;
+      }
+      if (d.chain && d.chain.length>0) {
+        html += `<div class="section"><h4>推导链</h4>`;
+        d.chain.forEach(c => {
+          const cn = typeof c==="string" ? c.split("/").pop().replace(">","") : c;
+          html += `<div class="rel-item" onclick="showDetail('${cn}')"><span class="rdot" style="background:#3b82f6"></span>${cn}</div>`;
+        });
+        html += `</div>`;
+      }
+    } catch(e) {}
+  } else if (node.type === "HazardType") {
+    try {
+      const r = await fetch(`/api/sparql/hazard/${nodeId}`);
+      const d = await r.json();
+      if (d.indicators && d.indicators.length>0) {
+        html += `<div class="section"><h4>关联指标 (${d.indicators.length})</h4>`;
+        d.indicators.forEach(ind => {
+          html += `<div class="rel-item" onclick="showDetail('${ind.id}')"><span class="rdot" style="background:#3b82f6"></span>${ind.id}</div>`;
+        });
+        html += `</div>`;
+      }
+    } catch(e) {}
+  } else if (node.type === "DataSource") {
+    html += `<div class="section"><h4>prov:Entity (数据源)</h4></div>`;
+    const outEdges = allEdges.filter(e=>e.from===nodeId);
+    if (outEdges.length>0) {
+      html += `<div class="section"><h4>下游指标 (${outEdges.length})</h4>`;
+      outEdges.forEach(e => { html += `<div class="rel-item" onclick="showDetail('${e.to}')"><span class="rdot" style="background:#3b82f6"></span>${e.to}</div>`; });
+      html += `</div>`;
+    }
+  } else if (node.type === "Rule") {
+    html += `<div class="section"><h4>deo:Hazard (检测规则)</h4></div>`;
+  } else if (node.type === "Event") {
+    html += `<div class="section"><h4>deo:Disaster (灾害事件)</h4></div>`;
+  }
+
+  // In/out edges
+  const inE = allEdges.filter(e=>e.to===nodeId);
+  const outE = allEdges.filter(e=>e.from===nodeId);
+  if (inE.length>0) {
+    html += `<div class="section"><h4>入边 (${inE.length})</h4>`;
+    inE.slice(0,20).forEach(e => { html += `<div class="rel-item" onclick="showDetail('${e.from}')"><span class="rdot" style="background:${TYPE_COLOR[allNodes.find(n=>n.id===e.from)?.type]||'#6b7280'}"></span>${e.from} ← ${e.label}</div>`; });
+    html += `</div>`;
+  }
+  if (outE.length>0) {
+    html += `<div class="section"><h4>出边 (${outE.length})</h4>`;
+    outE.slice(0,20).forEach(e => { html += `<div class="rel-item" onclick="showDetail('${e.to}')"><span class="rdot" style="background:${TYPE_COLOR[allNodes.find(n=>n.id===e.to)?.type]||'#6b7280'}"></span>${e.label} → ${e.to}</div>`; });
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  document.getElementById("detail").innerHTML = html;
+  document.getElementById("detail").classList.add("show");
+  document.getElementById("emptyHint").style.display = "none";
+}
+
+// ── Search (SPARQL) ──
+let st;
+function doSearch() {
+  clearTimeout(st);
+  st = setTimeout(async () => {
+    const q = document.getElementById("searchInput").value.trim();
+    if (!q) { document.getElementById("searchResults").innerHTML=""; return; }
+    const r = await fetch(`/api/sparql/search?q=${encodeURIComponent(q)}`);
+    const items = await r.json();
+    document.getElementById("searchResults").innerHTML = items.map(i =>
+      `<div class="sr" onclick="showDetail('${i.id}')"><span class="srid">${i.id}</span><br><span style="color:#9ca3af;">${(i.description||"").slice(0,50)}</span></div>`
+    ).join("") || `<div class="sr" style="color:#6b7280;">无结果</div>`;
+  }, 250);
+}
+
+// ── Event detection ──
+async function runDetect() {
+  const date = document.getElementById("evDate").value;
+  const ht = document.getElementById("evHazard").value;
+  setStatus(`检测 + 写入 RDF: ${date}...`);
+  const r = await fetch("/api/detect", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({date, hazard_type: ht||null}) });
+  const d = await r.json();
+  document.getElementById("eventList").innerHTML = d.events.length===0
+    ? `<div style="color:#6b7280;font-size:11px;">无极端事件</div>`
+    : d.events.map(e => `<div class="ev"><b>${e.severity.toUpperCase()}</b> ${e.hazard_type} · ${e.cells_count}格点 · ${e.area_km2.toFixed(0)}km² · ${e.region}</div>`).join("");
+  setStatus(`检测: ${d.events.length} 事件 · RDF: ${d.rdf_triples} 三元组`);
+}
+
+function setStatus(msg) { document.getElementById("status").innerHTML = `<span>${msg}</span><span style="color:#10b981;">DMDO-OWL</span>`; }
+
+init();
+</script>
+</body>
+</html>
