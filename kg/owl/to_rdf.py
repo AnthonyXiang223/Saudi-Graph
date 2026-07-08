@@ -283,6 +283,138 @@ class SaudiDMDOConverter:
                 self.graph.add((out_uri, SAUDI.coOccursWith, co_uri))
 
     # ═══════════════════════════════════════════════════════════
+    # Observation layer — NetCDF values → SOSA Observation instances
+    # ═══════════════════════════════════════════════════════════
+
+    def add_observations(self, date_str: str, indicator_ids: list = None,
+                         lat_idx: list = None, lon_idx: list = None,
+                         threshold_filter: dict = None) -> int:
+        """
+        Create SOSA Observation triples from NetCDF data.
+
+        Selectively instantiates observations to avoid blowing up the graph
+        (35,200 grids × 365 days × 91 indicators = 1.2 billion observations).
+
+        Args:
+            date_str: Date string "YYYYMMDD" or "YYYY-MM-DD"
+            indicator_ids: List of indicator IDs, or None for all
+            lat_idx: List of latitude indices to include, or None for all
+            lon_idx: List of longitude indices to include, or None for all
+            threshold_filter: Dict {indicator_id: (op, value)} to only create
+                              observations that exceed a threshold.
+                              e.g. {"tmax_c": (">=", 45), "daily_precip_total": (">=", 10)}
+
+        Returns:
+            Number of observation triples created
+        """
+        import xarray as xr
+        import numpy as np
+        import os
+
+        date_clean = date_str.replace("-", "")
+        nc_path = os.path.join(self.data_dir, f"saudi_indicators_{date_clean}.nc")
+
+        if not os.path.exists(nc_path):
+            raise FileNotFoundError(f"NetCDF not found: {nc_path}")
+
+        ds = xr.open_dataset(nc_path)
+
+        # Resolve lat/lon
+        if "latitude" in ds.dims:
+            lats = ds["latitude"].values
+            lons = ds["longitude"].values
+        elif "lat" in ds.dims:
+            lats = ds["lat"].values
+            lons = ds["lon"].values
+        else:
+            ds.close()
+            raise KeyError("Cannot find lat/lon dimensions")
+
+        # Resolve indicator list
+        if indicator_ids is None:
+            indicator_ids = [op["id"] for op in self._op_by_id.values()]
+        available = [i for i in indicator_ids if i in ds.variables]
+
+        # Resolve grid indices
+        if lat_idx is None:
+            lat_idx = list(range(len(lats)))
+        if lon_idx is None:
+            lon_idx = list(range(len(lons)))
+
+        # Build threshold filters
+        filters = {}
+        if threshold_filter:
+            for ind_id, (op_str, val) in threshold_filter.items():
+                filters[ind_id] = (op_str, val)
+
+        cmp_fns = {
+            ">=": lambda a, b: a >= b,
+            ">":  lambda a, b: a > b,
+            "<=": lambda a, b: a <= b,
+            "<":  lambda a, b: a < b,
+            "==": lambda a, b: np.isclose(a, b),
+        }
+
+        count = 0
+        formatted_date = f"{date_clean[:4]}-{date_clean[4:6]}-{date_clean[6:8]}"
+
+        for ind_id in available:
+            data = ds[ind_id].values
+
+            # Handle multi-dimensional data
+            if data.ndim >= 3:
+                data = data.mean(axis=0) if data.shape[0] > 1 else data[0]
+                while data.ndim > 2:
+                    data = data[0]
+
+            ind_uri = SAUDI[f"Indicator/{ind_id}"]
+
+            has_filter = ind_id in filters
+            cmp_fn = None
+            threshold_val = None
+            if has_filter:
+                op_str, threshold_val = filters[ind_id]
+                cmp_fn = cmp_fns.get(op_str)
+
+            for i in lat_idx:
+                if i >= data.shape[0]:
+                    continue
+                for j in lon_idx:
+                    if j >= data.shape[1]:
+                        continue
+                    val = data[i, j]
+                    if np.isnan(val):
+                        continue
+
+                    # Apply threshold filter if present
+                    if has_filter and cmp_fn is not None:
+                        if not cmp_fn(val, threshold_val):
+                            continue
+
+                    # Create SOSA Observation
+                    obs_node = BNode()
+                    lat = float(lats[i])
+                    lon_val = float(lons[j])
+
+                    self.graph.add((obs_node, RDF.type, SOSA.Observation))
+                    self.graph.add((obs_node, SOSA.observedProperty, ind_uri))
+                    self.graph.add((obs_node, SOSA.hasSimpleResult, Literal(float(val), datatype=XSD.float)))
+                    self.graph.add((obs_node, SOSA.resultTime, Literal(formatted_date, datatype=XSD.date)))
+
+                    # Spatial: link to grid coordinates
+                    grid_uri = SAUDI[f"Grid/{lat:.2f}_{lon_val:.2f}"]
+                    self.graph.add((grid_uri, RDF.type, GEO_F.Feature))
+                    self.graph.add((grid_uri, GEO_F.hasGeometry, Literal(f"POINT({lon_val} {lat})", datatype=GEO_F.wktLiteral)))
+                    self.graph.add((obs_node, SOSA.hasFeatureOfInterest, grid_uri))
+
+                    count += 1
+
+        ds.close()
+        print(f"Created {count} observations for {date_clean} ({len(available)} indicators, "
+              f"{len(lat_idx)}×{len(lon_idx)} grid)")
+        return count
+
+    # ═══════════════════════════════════════════════════════════
     # Event detection → deo:Disaster instances
     # ═══════════════════════════════════════════════════════════
 

@@ -199,6 +199,81 @@ class SPARQLQueries:
         return self._run(q)
 
 
+    # ═══════════════════════════════════════════════════════════
+    # Layer 4: SOSA Observation queries (NetCDF values in RDF)
+    # ═══════════════════════════════════════════════════════════
+
+    def observation_by_indicator(self, indicator_id: str, date_str: str = None,
+                                  min_value: float = None) -> List[Dict]:
+        """Query all SOSA Observations for an indicator, optionally filtered."""
+        ind_uri = _uri("Indicator", indicator_id)
+        date_filter = ""
+        val_filter = ""
+        if date_str:
+            date_clean = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}" if len(date_str) == 8 else date_str
+            date_filter = f'FILTER(?date = "{date_clean}"^^xsd:date)'
+        if min_value is not None:
+            val_filter = f"FILTER(?value > {min_value})"
+
+        q = PREFIXES + f"""
+        SELECT ?lat ?lon ?value ?date WHERE {{
+            ?obs sosa:observedProperty {ind_uri} ;
+                 sosa:hasSimpleResult ?value ;
+                 sosa:resultTime ?date ;
+                 sosa:hasFeatureOfInterest ?grid .
+            ?grid geo:hasGeometry ?geom .
+            BIND(STRBEFORE(STRAFTER(STR(?geom), "POINT("), " ") AS ?lon)
+            BIND(STRBEFORE(STRAFTER(STR(?geom), " "), ")") AS ?lat)
+            {date_filter}
+            {val_filter}
+        }}
+        ORDER BY DESC(?value)
+        """
+        return self._run(q)
+
+    def observations_summary(self, date_str: str, indicator_ids: list = None) -> Dict:
+        """Get observation count and stats for a date."""
+        date_clean = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}" if len(date_str) == 8 else date_str
+
+        if indicator_ids is None:
+            # Count all
+            q = PREFIXES + f"""
+            SELECT (COUNT(?obs) as ?count) WHERE {{
+                ?obs sosa:resultTime "{date_clean}"^^xsd:date .
+            }}
+            """
+            results = self._run(q)
+            return {"date": date_str, "total_observations": int(results[0]["count"]) if results else 0}
+
+        q = PREFIXES + f"""
+        SELECT ?indicator (COUNT(?obs) as ?count) (MAX(?value) as ?maxVal) (MIN(?value) as ?minVal) WHERE {{
+            ?obs sosa:observedProperty ?indicator ;
+                 sosa:hasSimpleResult ?value ;
+                 sosa:resultTime "{date_clean}"^^xsd:date .
+        }}
+        GROUP BY ?indicator
+        ORDER BY DESC(?count)
+        """
+        return self._run(q)
+
+    def compare_indicator_dates(self, indicator_id: str, dates: list) -> List[Dict]:
+        """Compare an indicator's observation stats across multiple dates."""
+        ind_uri = _uri("Indicator", indicator_id)
+        date_values = " ".join([f'"{d}"^^xsd:date' for d in dates])
+
+        q = PREFIXES + f"""
+        SELECT ?date (COUNT(?obs) as ?count) (MAX(?value) as ?max) (AVG(?value) as ?avg) WHERE {{
+            ?obs sosa:observedProperty {ind_uri} ;
+                 sosa:hasSimpleResult ?value ;
+                 sosa:resultTime ?date .
+            FILTER(?date IN ({date_values}))
+        }}
+        GROUP BY ?date
+        ORDER BY ?date
+        """
+        return self._run(q)
+
+
 def demo():
     """Run a quick demo of SPARQL queries against the Saudi KG."""
     import sys, os
