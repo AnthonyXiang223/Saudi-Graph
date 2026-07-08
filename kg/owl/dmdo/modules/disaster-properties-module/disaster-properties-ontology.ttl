@@ -1,0 +1,402 @@
+@prefix : <http://knowwheregraph/ontology/dpo#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dmdo: <http://knowwheregraph/ontology/dmdo#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix time: <http://www.w3.org/2006/time#> .
+@prefix vann: <http://purl.org/vocab/vann/> .
+@prefix voaf: <http://purl.org/vocommons/voaf#> .
+@prefix schema: <http://schema.org/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@base <http://knowwheregraph/ontology/dpo> .
+
+
+
+foaf:Agent a owl:Class .
+foaf:name a owl:AnnotationProperty .
+dcterms:title a owl:AnnotationProperty .
+dcterms:description a owl:AnnotationProperty .
+dcterms:rights a owl:AnnotationProperty .
+dcterms:license a owl:AnnotationProperty .
+dcterms:created a owl:AnnotationProperty .
+dcterms:creator a owl:AnnotationProperty .
+skos:definition a owl:AnnotationProperty .
+skos:example a owl:AnnotationProperty .
+skos:note a owl:AnnotationProperty .
+vann:preferredNamespacePrefix a owl:AnnotationProperty .
+vann:preferredNamespaceUri a owl:AnnotationProperty .
+schema:domainIncludes a owl:AnnotationProperty .
+schema:rangeIncludes a owl:AnnotationProperty .
+time:TemporalEntity a owl:Class .
+
+
+<http://knowwheregraph/ontology/dpo> rdf:type owl:Ontology ;
+dcterms:created "2023-05-11"^^xsd:date ;
+dcterms:creator [ rdf:type foaf:Agent ;
+         foaf:name "The KnowWhereGraph Project"@en ] ;
+dcterms:description "This ontology is for modeling disaster management domain properties."@en ;
+dcterms:license <https://creativecommons.org/licenses/by/4.0/> ;
+dcterms:title "Disaster Properties Ontology (DPO)"@en ;
+vann:preferredNamespaceUri "http://knowwheregraph/ontology/dpo/" ;
+owl:versionInfo "v 1.0" .
+
+
+
+#################################################################
+#    Annotation properties
+#################################################################
+
+###  http://schema.org/domainIncludes
+schema:domainIncludes rdf:type owl:AnnotationProperty .
+
+
+###  http://schema.org/rangeIncludes
+schema:rangeIncludes rdf:type owl:AnnotationProperty .
+
+
+#################################################################
+#    Object Properties
+#################################################################
+
+###  http://knowwheregraph/ontology/dmdo/affectedBy
+<http://knowwheregraph/ontology/dmdo/affectedBy> rdf:type owl:ObjectProperty ;
+                                                 schema:domainIncludes "Element-At-Risk" ;
+                                                 schema:rangeIncludes "Disaster" ,
+                                                                      "Hazard" ;
+                                                 rdfs:label "affected by" .
+
+
+###  http://knowwheregraph/ontology/dmdo/hasSpatialExtent
+<http://knowwheregraph/ontology/dmdo/hasSpatialExtent> rdf:type owl:ObjectProperty ;
+                                                       schema:rangeIncludes <http://www.opengis.net/ont/geosparql#SpatialObject> ;
+                                                       rdfs:label "has spatial extent" .
+
+
+###  http://knowwheregraph/ontology/dmdo/hasTemporalExtent
+<http://knowwheregraph/ontology/dmdo/hasTemporalExtent> rdf:type owl:ObjectProperty ;
+                                                        schema:rangeIncludes time:TemporalEntity ;
+                                                        rdfs:label "has temporal extent" .
+
+
+###  http://knowwheregraph/ontology/dmdo/hazardType
+<http://knowwheregraph/ontology/dmdo/hazardType> rdf:type owl:ObjectProperty ;
+                                                 schema:domainIncludes <http://knowwheregraph/ontology/dmdo/Disaster> ,
+                                                                       <http://knowwheregraph/ontology/dmdo/Hazard> ;
+                                                 schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/HazardType> ;
+                                                 rdfs:label "hazard type" .
+
+
+###  http://knowwheregraph/ontology/dmdo/involvedIn
+<http://knowwheregraph/ontology/dmdo/involvedIn> rdf:type owl:ObjectProperty ;
+                                                 schema:domainIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                 schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/DisasterImpact> ;
+                                                 rdfs:label "involved in" .
+
+
+###  http://knowwheregraph/ontology/dmdo/resultOf
+<http://knowwheregraph/ontology/dmdo/resultOf> rdf:type owl:ObjectProperty ;
+                                               owl:inverseOf <http://knowwheregraph/ontology/dmdo/resultsIn> ;
+                                               schema:domainIncludes <http://knowwheregraph/ontology/dmdo/Disaster> ;
+                                               schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/Hazard> ;
+                                               rdfs:label "result of" .
+
+
+###  http://knowwheregraph/ontology/dmdo/resultsIn
+<http://knowwheregraph/ontology/dmdo/resultsIn> rdf:type owl:ObjectProperty ;
+                                                schema:domainIncludes <http://knowwheregraph/ontology/dmdo/Hazard> ;
+                                                schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/Disaster> ;
+                                                rdfs:label "results in" .
+
+
+###  http://knowwheregraph/ontology/dpo/associatedWithDisaster
+<http://knowwheregraph/ontology/dpo/associatedWithDisaster> rdf:type owl:ObjectProperty ;
+                                                            schema:domainIncludes <http://knowwheregraph/ontology/dpo/Vulnerability> ;
+                                                            schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/Disaster> ;
+                                                            rdfs:label "associated with disaster" .
+
+
+###  http://knowwheregraph/ontology/dpo/associatedWithHazardType
+<http://knowwheregraph/ontology/dpo/associatedWithHazardType> rdf:type owl:ObjectProperty ;
+                                                              schema:domainIncludes <http://knowwheregraph/ontology/dpo/DisasterRisk> ,
+                                                                                    <http://knowwheregraph/ontology/dpo/Vulnerability> ;
+                                                              schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/HazardType> ;
+                                                              rdfs:label "associated with hazard type" .
+
+
+###  http://knowwheregraph/ontology/dpo/capacityOfElementAtRisk
+<http://knowwheregraph/ontology/dpo/capacityOfElementAtRisk> rdf:type owl:ObjectProperty ;
+                                                             rdfs:subPropertyOf <http://www.w3.org/ns/ssn/isPropertyOf> ;
+                                                             owl:inverseOf <http://knowwheregraph/ontology/dpo/hasCapacity> ;
+                                                             schema:domainIncludes <http://knowwheregraph/ontology/dpo/AdaptiveCapacity> ;
+                                                             schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                             rdfs:label "capacity of element-at-risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/determinesImpact
+<http://knowwheregraph/ontology/dpo/determinesImpact> rdf:type owl:ObjectProperty ;
+                                                      schema:domainIncludes <http://knowwheregraph/ontology/dpo/Vulnerability> ;
+                                                      schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/DisasterImpact> ;
+                                                      rdfs:label "determines impact" .
+
+
+###  http://knowwheregraph/ontology/dpo/determinesRisk
+<http://knowwheregraph/ontology/dpo/determinesRisk> rdf:type owl:ObjectProperty ;
+                                                    schema:domainIncludes <http://knowwheregraph/ontology/dpo/AdaptiveCapacity> ,
+                                                                          <http://knowwheregraph/ontology/dpo/Intensity> ,
+                                                                          <http://knowwheregraph/ontology/dpo/LevelOfExposure> ,
+                                                                          <http://knowwheregraph/ontology/dpo/Resilience> ,
+                                                                          <http://knowwheregraph/ontology/dpo/Vulnerability> ;
+                                                    schema:rangeIncludes <http://knowwheregraph/ontology/dpo/DisasterRisk> ;
+                                                    rdfs:label "determines risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/exposureOfElementAtRisk
+<http://knowwheregraph/ontology/dpo/exposureOfElementAtRisk> rdf:type owl:ObjectProperty ;
+                                                             rdfs:subPropertyOf <http://www.w3.org/ns/ssn/isPropertyOf> ;
+                                                             owl:inverseOf <http://knowwheregraph/ontology/dpo/hasExposure> ;
+                                                             schema:domainIncludes <http://knowwheregraph/ontology/dpo/LevelOfExposure> ;
+                                                             schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                             rdfs:label "exposure of element-at-risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasCapacity
+<http://knowwheregraph/ontology/dpo/hasCapacity> rdf:type owl:ObjectProperty ;
+                                                 rdfs:subPropertyOf <http://www.w3.org/ns/ssn/hasProperty> ;
+                                                 schema:domainIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                 schema:rangeIncludes <http://knowwheregraph/ontology/dpo/AdaptiveCapacity> ;
+                                                 rdfs:label "has capacity" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasDisasterRisk
+<http://knowwheregraph/ontology/dpo/hasDisasterRisk> rdf:type owl:ObjectProperty ;
+                                                     rdfs:subPropertyOf <http://www.w3.org/ns/ssn/hasProperty> ;
+                                                     owl:inverseOf <http://knowwheregraph/ontology/dpo/riskOfElementAtRisk> ;
+                                                     schema:domainIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                     schema:rangeIncludes <http://knowwheregraph/ontology/dpo/DisasterRisk> ;
+                                                     rdfs:label "has disaster risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasExpectedImpact
+<http://knowwheregraph/ontology/dpo/hasExpectedImpact> rdf:type owl:ObjectProperty ;
+                                                       schema:domainIncludes <http://knowwheregraph/ontology/dpo/DisasterRisk> ;
+                                                       schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/DisasterImpact> ;
+                                                       rdfs:label "has expected impact" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasExposure
+<http://knowwheregraph/ontology/dpo/hasExposure> rdf:type owl:ObjectProperty ;
+                                                 rdfs:subPropertyOf <http://www.w3.org/ns/ssn/hasProperty> ;
+                                                 schema:domainIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                 schema:rangeIncludes <http://knowwheregraph/ontology/dpo/LevelOfExposure> ;
+                                                 rdfs:label "has exposure" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasIntensity
+<http://knowwheregraph/ontology/dpo/hasIntensity> rdf:type owl:ObjectProperty ;
+                                                  rdfs:subPropertyOf <http://www.w3.org/ns/ssn/hasProperty> ;
+                                                  owl:inverseOf <http://knowwheregraph/ontology/dpo/intensityOfDisaster> ;
+                                                  schema:domainIncludes <http://knowwheregraph/ontology/dmdo/Disaster> ;
+                                                  schema:rangeIncludes <http://knowwheregraph/ontology/dpo/Intensity> ;
+                                                  rdfs:label "has intensity" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasResilience
+<http://knowwheregraph/ontology/dpo/hasResilience> rdf:type owl:ObjectProperty ;
+                                                   rdfs:subPropertyOf <http://www.w3.org/ns/ssn/hasProperty> ;
+                                                   owl:inverseOf <http://knowwheregraph/ontology/dpo/resilienceOfElementAtRisk> ;
+                                                   schema:domainIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                   schema:rangeIncludes <http://knowwheregraph/ontology/dpo/Resilience> ;
+                                                   rdfs:label "has resilience" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasSeverity
+<http://knowwheregraph/ontology/dpo/hasSeverity> rdf:type owl:ObjectProperty ;
+                                                 rdfs:subPropertyOf <http://www.w3.org/ns/ssn/hasProperty> ;
+                                                 owl:inverseOf <http://knowwheregraph/ontology/dpo/severityOfImpact> ;
+                                                 schema:domainIncludes <http://knowwheregraph/ontology/dmdo/DisasterImpact> ,
+                                                                       <http://knowwheregraph/ontology/dpo/Severity> ;
+                                                 rdfs:label "has severity" .
+
+
+###  http://knowwheregraph/ontology/dpo/hasVulnerability
+<http://knowwheregraph/ontology/dpo/hasVulnerability> rdf:type owl:ObjectProperty ;
+                                                      rdfs:subPropertyOf <http://www.w3.org/ns/ssn/hasProperty> ;
+                                                      owl:inverseOf <http://knowwheregraph/ontology/dpo/vulnerabilityOfElementAtRisk> ;
+                                                      schema:domainIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ,
+                                                                            <http://knowwheregraph/ontology/dpo/Vulnerability> ;
+                                                      rdfs:label "has vulnerability" .
+
+
+###  http://knowwheregraph/ontology/dpo/intensityOfDisaster
+<http://knowwheregraph/ontology/dpo/intensityOfDisaster> rdf:type owl:ObjectProperty ;
+                                                         rdfs:subPropertyOf <http://www.w3.org/ns/ssn/isPropertyOf> ;
+                                                         schema:domainIncludes <http://knowwheregraph/ontology/dpo/Intensity> ;
+                                                         schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/Disaster> ;
+                                                         rdfs:label "intensity of disaster" .
+
+
+###  http://knowwheregraph/ontology/dpo/resilienceOfElementAtRisk
+<http://knowwheregraph/ontology/dpo/resilienceOfElementAtRisk> rdf:type owl:ObjectProperty ;
+                                                               rdfs:subPropertyOf <http://www.w3.org/ns/ssn/isPropertyOf> ;
+                                                               schema:domainIncludes <http://knowwheregraph/ontology/dpo/Resilience> ;
+                                                               schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                               rdfs:label "resilience of element-at-risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/riskOfElementAtRisk
+<http://knowwheregraph/ontology/dpo/riskOfElementAtRisk> rdf:type owl:ObjectProperty ;
+                                                         rdfs:subPropertyOf <http://www.w3.org/ns/ssn/isPropertyOf> ;
+                                                         schema:domainIncludes <http://knowwheregraph/ontology/dpo/DisasterRisk> ;
+                                                         schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                         rdfs:label "risk of element-at-risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/severityOfImpact
+<http://knowwheregraph/ontology/dpo/severityOfImpact> rdf:type owl:ObjectProperty ;
+                                                      rdfs:subPropertyOf <http://www.w3.org/ns/ssn/isPropertyOf> ;
+                                                      schema:domainIncludes <http://knowwheregraph/ontology/dpo/Severity> ;
+                                                      schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/DisasterImpact> ;
+                                                      rdfs:label "severity of impact" .
+
+
+###  http://knowwheregraph/ontology/dpo/vulnerabilityOfElementAtRisk
+<http://knowwheregraph/ontology/dpo/vulnerabilityOfElementAtRisk> rdf:type owl:ObjectProperty ;
+                                                                  rdfs:subPropertyOf <http://www.w3.org/ns/ssn/isPropertyOf> ;
+                                                                  schema:domainIncludes <http://knowwheregraph/ontology/dpo/Vulnerability> ;
+                                                                  schema:rangeIncludes <http://knowwheregraph/ontology/dmdo/ElementAtRisk> ;
+                                                                  rdfs:label "vulnerability of element-at-risk" .
+
+
+###  http://www.w3.org/ns/ssn/hasProperty
+<http://www.w3.org/ns/ssn/hasProperty> rdf:type owl:ObjectProperty .
+
+
+###  http://www.w3.org/ns/ssn/isPropertyOf
+<http://www.w3.org/ns/ssn/isPropertyOf> rdf:type owl:ObjectProperty .
+
+
+#################################################################
+#    Data properties
+#################################################################
+
+###  http://knowwheregraph/ontology/dpo/riskLevel
+<http://knowwheregraph/ontology/dpo/riskLevel> rdf:type owl:DatatypeProperty ;
+                                               rdfs:label "level of risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/riskProbability
+<http://knowwheregraph/ontology/dpo/riskProbability> rdf:type owl:DatatypeProperty ;
+                                                     rdfs:label "risk probability" .
+
+
+###  http://knowwheregraph/ontology/dpo/uncertainty
+<http://knowwheregraph/ontology/dpo/uncertainty> rdf:type owl:DatatypeProperty ;
+                                                 rdfs:label "uncertainty of risk" .
+
+
+#################################################################
+#    Classes
+#################################################################
+
+###  http://knowwheregraph/ontology/dmdo/Disaster
+<http://knowwheregraph/ontology/dmdo/Disaster> rdf:type owl:Class ;
+                                               rdfs:subClassOf <http://knowwheregraph/ontology/dmdo/Event> ;
+                                               rdfs:comment "A serious disruption of the functioning of a community or a society at any scale due to hazardous events interacting with conditions of exposure, vulnerability and capacity, leading to one or more of the following: human, material, economic and environmental losses and impacts. The effect of the disaster can be immediate and localized, but is often widespread and could last for a long period of time. The effect may test or exceed the capacity of a community or society to cope using its own resources, and therefore may require assistance from external sources, which could include neighbouring jurisdictions, or those at the national or international levels. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" ;
+                                               rdfs:label "Disaster" .
+
+
+###  http://knowwheregraph/ontology/dmdo/DisasterImpact
+<http://knowwheregraph/ontology/dmdo/DisasterImpact> rdf:type owl:Class ;
+                                                     rdfs:subClassOf <http://knowwheregraph/ontology/dmdo/Event> ;
+                                                     rdfs:comment "Disaster impact is the total effect, including negative effects (e.g., economic losses) and positive effects (e.g., economic gains), of a hazardous event or a disaster. The term includes economic, human and environmental impacts, and may include death, injuries, disease and other negative effects on human physical, mental and social well-being. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" ;
+                                                     rdfs:label "Disaster Impact" .
+
+
+###  http://knowwheregraph/ontology/dmdo/ElementAtRisk
+<http://knowwheregraph/ontology/dmdo/ElementAtRisk> rdf:type owl:Class ;
+                                                    rdfs:comment "Element-at risk is a generic term that signifies all objects, persons, animals, activities and processes that may be adversely affected by hazardous phenomena, in a particular area, either directly or indirectly. This includes: buildings, facilities, population, livestock, economic activities, public services, environment. (Source: The Carribean Handbook of Risk Information Management http://www.charim.net/methodology/52)" ;
+                                                    rdfs:label "Element-At-Risk" .
+
+
+###  http://knowwheregraph/ontology/dmdo/Event
+<http://knowwheregraph/ontology/dmdo/Event> rdf:type owl:Class ;
+                                            rdfs:comment "This generic concept denotes any hazard or disaster or impact event with observable properties (e.g., intensity, magnitude, extent) that can be measured. In that sense this concept can also be mentioned as a subclass of sosa:FeatureOfInterest from the SOSA ontology, which denotes any feature that can be observed based on a set of its attributes." ,
+                                                         "While we do no re-use concepts from standard/upper ontologies, mappings can be created between dmdo:Event with similar concepts (e.g., dul:Event) from external ontologies if needed." ;
+                                            rdfs:label "Event" .
+
+
+###  http://knowwheregraph/ontology/dmdo/Hazard
+<http://knowwheregraph/ontology/dmdo/Hazard> rdf:type owl:Class ;
+                                             rdfs:subClassOf <http://knowwheregraph/ontology/dmdo/Event> ;
+                                             rdfs:comment "A process, phenomenon or human activity that may cause loss of life, injury or other health impacts, property damage, social and economic disruption or environmental degradation. Hazards may be natural, anthropogenic or socionatural in origin. Hazards may be single, sequential or combined in their origin and effects. Each hazard is characterized by its location, intensity or magnitude, frequency and probability. Biological hazards are also defined by their infectiousness or toxicity, or other characteristics of the pathogen such as dose-response, incubation period, case fatality rate and estimation of the pathogen for transmission. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" ;
+                                             rdfs:label "Hazard" .
+
+
+###  http://knowwheregraph/ontology/dmdo/HazardType
+<http://knowwheregraph/ontology/dmdo/HazardType> rdf:type owl:Class ;
+                                                 rdfs:comment "This concept refers to the hazard theme or the ultimate feature of interest in SOSA terminology." ;
+                                                 rdfs:label "Hazard Type" .
+
+
+###  http://knowwheregraph/ontology/dpo/AdaptiveCapacity
+<http://knowwheregraph/ontology/dpo/AdaptiveCapacity> rdf:type owl:Class ;
+                                                      rdfs:subClassOf <http://www.w3.org/ns/sosa/ObservableProperty> ;
+                                                      rdfs:label "Adaptive Capacity" .
+
+
+###  http://knowwheregraph/ontology/dpo/DisasterRisk
+<http://knowwheregraph/ontology/dpo/DisasterRisk> rdf:type owl:Class ;
+                                                  rdfs:subClassOf <http://www.w3.org/ns/sosa/ObservableProperty> ;
+                                                  rdfs:comment """The potential loss of life, injury, or destroyed or damaged assets which could occur to a system, society or a community in a specific period of time, determined probabilistically as a function of hazard, exposure, vulnerability and capacity.
+
+The definition of disaster risk reflects the concept of hazardous events and disasters as the outcome of continuously present conditions of risk. Disaster risk comprises different types of potential losses which are often difficult to quantify. Nevertheless, with knowledge of the prevailing hazards and the patterns of population and socioeconomic development, disaster risks can be assessed and mapped, in broad terms at least. (Source: UNDRR Glossary - https://www.undrr.org/terminology)""" ;
+                                                  rdfs:label "Disaster Risk" .
+
+
+###  http://knowwheregraph/ontology/dpo/Intensity
+<http://knowwheregraph/ontology/dpo/Intensity> rdf:type owl:Class ;
+                                               rdfs:subClassOf <http://www.w3.org/ns/sosa/ObservableProperty> ;
+                                               rdfs:comment """The magnitude of a natural hazard event is related to the energy released by the event. It is distinguished from intensity which is related to the effects at a specific location or area. (Source: Encyclopedia of natural hazards https://link.springer.com/referenceworkentry/10.1007/978-1-4020-4399-4_147)
+
+This is the strength of a hazard. Most hazards are measured on a scale e.g. the Richter scale or the volcanic explosivity index (VEI). Generally speaking, the stronger the hazard the more severe the hazard is. (Source: The Geographer online https://www.thegeographeronline.net/hazards-and-disasters---risk-assessment-and-response.html)""" ;
+                                               rdfs:label "Intensity" .
+
+
+###  http://knowwheregraph/ontology/dpo/LevelOfExposure
+<http://knowwheregraph/ontology/dpo/LevelOfExposure> rdf:type owl:Class ;
+                                                     rdfs:subClassOf <http://www.w3.org/ns/sosa/ObservableProperty> ;
+                                                     rdfs:comment """The situation of people, infrastructure, housing, production capacities and other tangible human assets located in hazard-prone areas.
+
+Measures of exposure can include the number of people or types of assets in an area. These can be combined with the specific vulnerability and capacity of the exposed elements to any particular hazard to estimate the quantitative risks associated with that hazard in the area of interest. (Source: UNDRR Glossary - https://www.undrr.org/terminology)""" ;
+                                                     rdfs:label "Level Of Exposure" .
+
+
+###  http://knowwheregraph/ontology/dpo/Resilience
+<http://knowwheregraph/ontology/dpo/Resilience> rdf:type owl:Class ;
+                                                rdfs:subClassOf <http://www.w3.org/ns/sosa/ObservableProperty> ;
+                                                rdfs:comment "The ability of a system, community or society exposed to hazards to resist, absorb, accommodate, adapt to, transform and recover from the effects of a hazard in a timely and efficient manner, including through the preservation and restoration of its essential basic structures and functions through risk management. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" ;
+                                                rdfs:label "Resilience" .
+
+
+###  http://knowwheregraph/ontology/dpo/Severity
+<http://knowwheregraph/ontology/dpo/Severity> rdf:type owl:Class ;
+                                              rdfs:subClassOf <http://www.w3.org/ns/sosa/ObservableProperty> ;
+                                              rdfs:label "Severity" .
+
+
+###  http://knowwheregraph/ontology/dpo/Vulnerability
+<http://knowwheregraph/ontology/dpo/Vulnerability> rdf:type owl:Class ;
+                                                   rdfs:subClassOf <http://www.w3.org/ns/sosa/ObservableProperty> ;
+                                                   rdfs:comment "The conditions determined by physical, social, economic and environmental factors or processes which increase the susceptibility of an individual, a community, assets or systems to the impacts of hazards. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" ;
+                                                   rdfs:label "Vulnerability" .
+
+
+###  http://www.w3.org/ns/sosa/ObservableProperty
+<http://www.w3.org/ns/sosa/ObservableProperty> rdf:type owl:Class .
+
+
+###  Generated by the OWL API (version 4.5.9.2019-02-01T07:24:44Z) https://github.com/owlcs/owlapi

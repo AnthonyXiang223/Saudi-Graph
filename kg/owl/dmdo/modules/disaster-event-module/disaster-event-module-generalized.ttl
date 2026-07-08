@@ -1,0 +1,312 @@
+@prefix deo: <http://knowwheregraph/ontology/deo#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix time: <http://www.w3.org/2006/time#> .
+@prefix vann: <http://purl.org/vocab/vann/> .
+@prefix voaf: <http://purl.org/vocommons/voaf#> .
+@prefix schema: <http://schema.org/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<http://knowwheregraph/ontology/deo> rdf:type owl:Ontology ;
+                                      dcterms:created "2024-04-23"^^xsd:date ;
+                                      dcterms:creator [ rdf:type foaf:Agent ;
+                                                        foaf:name "The KnowWhereGraph Project"@en
+                                                      ] ;
+                                      dcterms:description "The Disaster Event Ontology (DEO) conceptualizes disaster-related events, related observations, spatiotemporal aspects, and causal relations. This ontology is meant to link the HIP Ontology to other disaster-themed data."@en ;
+                                      dcterms:license <https://creativecommons.org/licenses/by/4.0/> ;
+                                      dcterms:title "Disaster Event Ontology (DEO)"@en ;
+                                      vann:preferredNamespaceUri "http://knowwheregraph/ontology/deo/" ;
+                                      owl:versionInfo "v 1.0" .
+
+#################################################################
+#    Annotation properties
+#################################################################
+
+###  http://purl.org/dc/terms/created
+dcterms:created rdf:type owl:AnnotationProperty .
+
+
+###  http://purl.org/dc/terms/creator
+dcterms:creator rdf:type owl:AnnotationProperty .
+
+
+###  http://purl.org/dc/terms/description
+dcterms:description rdf:type owl:AnnotationProperty .
+
+
+###  http://purl.org/dc/terms/license
+dcterms:license rdf:type owl:AnnotationProperty .
+
+
+###  http://purl.org/dc/terms/rights
+dcterms:rights rdf:type owl:AnnotationProperty .
+
+
+###  http://purl.org/dc/terms/title
+dcterms:title rdf:type owl:AnnotationProperty .
+
+
+###  http://purl.org/vocab/vann/preferredNamespacePrefix
+vann:preferredNamespacePrefix rdf:type owl:AnnotationProperty .
+
+
+###  http://purl.org/vocab/vann/preferredNamespaceUri
+vann:preferredNamespaceUri rdf:type owl:AnnotationProperty .
+
+
+###  http://schema.org/domainIncludes
+schema:domainIncludes rdf:type owl:AnnotationProperty .
+
+
+###  http://schema.org/rangeIncludes
+schema:rangeIncludes rdf:type owl:AnnotationProperty .
+
+
+###  http://www.w3.org/2004/02/skos/core#definition
+skos:definition rdf:type owl:AnnotationProperty .
+
+
+###  http://www.w3.org/2004/02/skos/core#description
+skos:description rdf:type owl:AnnotationProperty .
+
+
+###  http://www.w3.org/2004/02/skos/core#example
+skos:example rdf:type owl:AnnotationProperty .
+
+
+###  http://www.w3.org/2004/02/skos/core#note
+skos:note rdf:type owl:AnnotationProperty .
+
+
+###  http://xmlns.com/foaf/0.1/name
+foaf:name rdf:type owl:AnnotationProperty .
+
+
+#################################################################
+#    Object Properties
+#################################################################
+
+###  http://knowwheregraph/ontology/deo#hasDisasterOfInterest
+deo:hasDisasterOfInterest rdf:type owl:ObjectProperty ;
+                          schema:domainIncludes "'Disaster Observation'" ;
+                          schema:rangeIncludes "Disaster" ;
+                          rdfs:label "has disaster of Interest" .
+
+
+###  http://knowwheregraph/ontology/deo#hasHazardOfInterest
+deo:hasHazardOfInterest rdf:type owl:ObjectProperty ;
+                        schema:domainIncludes "'Hazard Observation'" ;
+                        schema:rangeIncludes "Hazard" ;
+                        rdfs:label "has hazard of interest" .
+
+
+###  http://knowwheregraph/ontology/deo#hasHazardProperty
+deo:hasHazardProperty rdf:type owl:ObjectProperty ;
+                      schema:domainIncludes "'Hazard Type'" ;
+                      schema:rangeIncludes "'Hazard Property'" ;
+                      rdfs:label "has hazard property" .
+
+
+###  http://knowwheregraph/ontology/deo#hasImpactOfInterest
+deo:hasImpactOfInterest rdf:type owl:ObjectProperty ;
+                        schema:domainIncludes "'Impact Observation'" ;
+                        schema:rangeIncludes "'Disaster Impact'" ;
+                        rdfs:label "has impact of interest" .
+
+
+###  http://knowwheregraph/ontology/deo#hasPart
+deo:hasPart rdf:type owl:ObjectProperty ;
+            schema:domainIncludes "Event" ;
+            schema:rangeIncludes "Event" ;
+            rdfs:label "has part" .
+
+
+###  http://knowwheregraph/ontology/deo#hasPossiblyCausesRelation
+deo:hasPossiblyCausesRelation rdf:type owl:ObjectProperty ;
+                              schema:domainIncludes "Disaster" ,
+                                                    "Hazard" ;
+                              schema:rangeIncludes "'Possibly Causes Relation'" ;
+                              rdfs:label "has possibly causes relation" .
+
+
+###  http://knowwheregraph/ontology/deo#hasTemporalScope
+deo:hasTemporalScope rdf:type owl:ObjectProperty ;
+                     schema:domainIncludes "Event" ;
+                     rdfs:label "has temporal scope" .
+
+
+###  http://knowwheregraph/ontology/deo#hasUltimateFeatureOfInterest
+deo:hasUltimateFeatureOfInterest rdf:type owl:ObjectProperty ;
+                                 schema:domainIncludes "'Disaster Observation'" ,
+                                                       "'Hazard Observation'" ;
+                                 schema:rangeIncludes "'Hazard Type'" ;
+                                 rdfs:label "has ultimate feature of interest" .
+
+
+###  http://knowwheregraph/ontology/deo#impactType
+deo:impactType rdf:type owl:ObjectProperty ;
+               schema:domainIncludes "'Disaster Impact'" ;
+               schema:rangeIncludes "'Impact Type'" ;
+               rdfs:label "impact type" .
+
+
+###  http://knowwheregraph/ontology/deo#involvedInImpact
+deo:involvedInImpact rdf:type owl:ObjectProperty ;
+                     schema:domainIncludes "Element-At-Risk" ;
+                     schema:rangeIncludes "'Disaster Impact'" ;
+                     rdfs:label "involved in impact" .
+
+
+###  http://knowwheregraph/ontology/deo#observedProperty
+deo:observedProperty rdf:type owl:ObjectProperty ;
+                     schema:domainIncludes "'Disaster Observation'" ,
+                                           "'Hazard Observation'" ,
+                                           "'Impact Observation'" ;
+                     schema:rangeIncludes "'Hazard Property'" ,
+                                          "'Impact Type'" ;
+                     rdfs:label "observed property" .
+
+
+###  http://knowwheregraph/ontology/deo#possiblyCauses
+deo:possiblyCauses rdf:type owl:ObjectProperty ;
+                   owl:propertyChainAxiom ( deo:hasPossiblyCausesRelation
+                                            deo:resultsIn
+                                          ) ;
+                   rdfs:label "possibly causes" .
+
+
+###  http://knowwheregraph/ontology/deo#relatedImpact
+deo:relatedImpact rdf:type owl:ObjectProperty ;
+                  rdfs:subPropertyOf deo:possiblyCauses ;
+                  schema:domainIncludes "Disaster" ;
+                  schema:rangeIncludes "'Disaster Impact'" ;
+                  rdfs:label "related impact" .
+
+
+###  http://knowwheregraph/ontology/deo#resultOf
+deo:resultOf rdf:type owl:ObjectProperty ;
+             rdfs:subPropertyOf deo:possiblyCauses ;
+             schema:domainIncludes "Disaster" ,
+                                   "Hazard" ;
+             schema:rangeIncludes "Disaster" ,
+                                  "Hazard" ;
+             rdfs:label "result of" .
+
+
+###  http://knowwheregraph/ontology/deo#resultsIn
+deo:resultsIn rdf:type owl:ObjectProperty ;
+              schema:domainIncludes "'Possibly Causes Relation'" ;
+              schema:rangeIncludes "Disaster" ,
+                                   "Hazard" ;
+              rdfs:label "results in" .
+
+
+###  http://knowwheregraph/ontology/deo/affectedBy
+<http://knowwheregraph/ontology/deo/affectedBy> rdf:type owl:ObjectProperty ;
+                                                schema:domainIncludes "Element-At-Risk" ;
+                                                schema:rangeIncludes "Disaster" ,
+                                                                     "Hazard" ;
+                                                rdfs:label "affected by" .
+
+
+###  http://knowwheregraph/ontology/deo/hazardType
+<http://knowwheregraph/ontology/deo/hazardType> rdf:type owl:ObjectProperty ;
+                                                schema:domainIncludes "Disaster" ,
+                                                                      "Hazard" ;
+                                                schema:rangeIncludes "'Hazard Type'" ;
+                                                rdfs:label "hazard type" .
+
+
+#################################################################
+#    Classes
+#################################################################
+
+###  http://knowwheregraph/ontology/deo#DisasterObservation
+deo:DisasterObservation rdf:type owl:Class ;
+                        rdfs:label "Disaster Observation" ;
+                        skos:description "This class denotes observations corresponding to instances of the Disaster class." .
+
+
+###  http://knowwheregraph/ontology/deo#HazardObservation
+deo:HazardObservation rdf:type owl:Class ;
+                      rdfs:label "Hazard Observation" ;
+                      skos:description "This class denotes observations corresponding to instances of the Hazard class." .
+
+
+###  http://knowwheregraph/ontology/deo#HazardProperty
+deo:HazardProperty rdf:type owl:Class ;
+                   rdfs:label "Hazard Property" ;
+                   skos:description "This class denotes the observable properties for any specific type of hazard. For e.g., the observable properties of a hurricane are sustained wind speed, atmospheric pressure." .
+
+
+###  http://knowwheregraph/ontology/deo#ImpactObservation
+deo:ImpactObservation rdf:type owl:Class ;
+                      rdfs:label "Impact Observation" ;
+                      skos:description "This class denotes observations corresponding to instances of the DisasterImpact class." .
+
+
+###  http://knowwheregraph/ontology/deo#ImpactType
+deo:ImpactType rdf:type owl:Class ;
+               rdfs:label "Impact Type" ;
+               skos:description "This concept refers to the impact theme or the ultimate feature of interest in SOSA terminology. This class denotes the impact types denotes in standard classification schemes, e.g., impact types from Desinventar." .
+
+
+###  http://knowwheregraph/ontology/deo#PossiblyCausesRelation
+deo:PossiblyCausesRelation rdf:type owl:Class ;
+                           rdfs:label "Possibly Causes Relation" ;
+                           skos:description "Reification of the possiblyCauses relation." .
+
+
+###  http://knowwheregraph/ontology/deo/Disaster
+<http://knowwheregraph/ontology/deo/Disaster> rdf:type owl:Class ;
+                                              rdfs:subClassOf <http://knowwheregraph/ontology/deo/Hazard> ;
+                                              rdfs:label "Disaster" ;
+                                              skos:description "A serious disruption of the functioning of a community or a society at any scale due to hazardous events interacting with conditions of exposure, vulnerability and capacity, leading to one or more of the following: human, material, economic and environmental losses and impacts. The effect of the disaster can be immediate and localized, but is often widespread and could last for a long period of time. The effect may test or exceed the capacity of a community or society to cope using its own resources, and therefore may require assistance from external sources, which could include neighbouring jurisdictions, or those at the national or international levels. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" .
+
+
+###  http://knowwheregraph/ontology/deo/DisasterImpact
+<http://knowwheregraph/ontology/deo/DisasterImpact> rdf:type owl:Class ;
+                                                    rdfs:subClassOf <http://knowwheregraph/ontology/deo/Event> ;
+                                                    rdfs:label "Disaster Impact" ;
+                                                    skos:description "Disaster impact is the total effect, including negative effects (e.g., economic losses) and positive effects (e.g., economic gains), of a hazardous event or a disaster. The term includes economic, human and environmental impacts, and may include death, injuries, disease and other negative effects on human physical, mental and social well-being. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" .
+
+
+###  http://knowwheregraph/ontology/deo/ElementAtRisk
+<http://knowwheregraph/ontology/deo/ElementAtRisk> rdf:type owl:Class ;
+                                                   rdfs:label "Element-At-Risk" ;
+                                                   skos:description "Element-at risk is a generic term that signifies all objects, persons, animals, activities and processes that may be adversely affected by hazardous phenomena, in a particular area, either directly or indirectly. This includes: buildings, facilities, population, livestock, economic activities, public services, environment. (Source: The Carribean Handbook of Risk Information Management http://www.charim.net/methodology/52)" .
+
+
+###  http://knowwheregraph/ontology/deo/Event
+<http://knowwheregraph/ontology/deo/Event> rdf:type owl:Class ;
+                                           rdfs:label "Event" ;
+                                           skos:description "This generic concept denotes any disaster-related occurrences (hazard, disaster, impact) with observable properties (e.g., intensity, magnitude, extent) that can be measured. In that sense this concept can also be mentioned as a subclass of sosa:FeatureOfInterest from the SOSA ontology, which denotes any feature that can be observed based on a set of its attributes." .
+
+
+###  http://knowwheregraph/ontology/deo/Hazard
+<http://knowwheregraph/ontology/deo/Hazard> rdf:type owl:Class ;
+                                            rdfs:subClassOf <http://knowwheregraph/ontology/deo/Event> ;
+                                            rdfs:label "Hazard" ;
+                                            skos:description "A process, phenomenon or human activity that may cause loss of life, injury or other health impacts, property damage, social and economic disruption or environmental degradation. Hazards may be natural, anthropogenic or socionatural in origin. Hazards may be single, sequential or combined in their origin and effects. Each hazard is characterized by its location, intensity or magnitude, frequency and probability. Biological hazards are also defined by their infectiousness or toxicity, or other characteristics of the pathogen such as dose-response, incubation period, case fatality rate and estimation of the pathogen for transmission. (Source: UNDRR Glossary - https://www.undrr.org/terminology)" .
+
+
+###  http://knowwheregraph/ontology/deo/HazardType
+<http://knowwheregraph/ontology/deo/HazardType> rdf:type owl:Class ;
+                                                rdfs:label "Hazard Type" ;
+                                                skos:description "This concept refers to the hazard theme or the ultimate feature of interest in SOSA terminology. This class denotes the hazard types denotes in standard classification schemes, e.g., the HIP Ontology." .
+
+
+###  http://xmlns.com/foaf/0.1/Agent
+foaf:Agent rdf:type owl:Class .
+
+
+[ rdf:type foaf:Agent ;
+  foaf:name "The KnowWhereGraph Project"@en
+] .
+
+###  Generated by the OWL API (version 4.5.9.2019-02-01T07:24:44Z) https://github.com/owlcs/owlapi

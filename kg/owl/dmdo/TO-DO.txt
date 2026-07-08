@@ -1,0 +1,12 @@
+Paper link - https://www.overleaf.com/1553392387kkyzcnrsqdgt
+Github link - https://github.com/KnowWhereGraph/dmdo
+OWL axioms document - https://www.overleaf.com/2193588835djcqwkvhbndc
+
+Note: Please feel free to provide suggestions on how we can document this entire work and the paper better!
+
+1. add license to the github repo
+2. update annotation in ontology ttls (get description from the paper)
+	rdf:label, rdf:comment, skos:description, skos:example
+3. update schema diagrams and description in the github readme (follow paper)
+4. update links to datasets in Table 1 in the paper (assigned to Sanaz)
+5. add few more competency questions to the paper - Section 3.1.1 (assigned to Kitty)
