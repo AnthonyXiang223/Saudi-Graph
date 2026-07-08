@@ -208,7 +208,35 @@ async function showDetail(nodeId) {
       html += `</div>`;
     }
   } else if (node.type === "Rule") {
-    html += `<div class="section"><h4>deo:Hazard (检测规则)</h4></div>`;
+    try {
+      const r = await fetch(`/api/sparql/rule/${nodeId}`);
+      const d = await r.json();
+      if (d.hazard_type) html += `<div class="meta">检测灾种: <span class="chip HazardType">${d.hazard_type}</span></div>`;
+      if (d.conditions && d.conditions.length>0) {
+        html += `<div class="section"><h4>检测条件 (${d.conditions.length} 个)</h4>`;
+        d.conditions.forEach(c => {
+          const prim = c.isPrimary === "true" ? " 🔑主条件" : "";
+          html += `<div class="rel-item" onclick="showDetail('${c.indicator||c.threshold}')">
+            <span class="rdot" style="background:${c.isPrimary==='true'?'#ef4444':'#3b82f6'}"></span>
+            ${c.indicator||'?'} ${c.comparisonOp||c.condition||'>='} ${c.threshold||'?'}
+            <span style="color:#6b7280;">(权重 ${c.weight})${prim}</span>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      if (d.severity_levels && d.severity_levels.length>0) {
+        html += `<div class="section"><h4>严重度分级</h4>`;
+        d.severity_levels.forEach(s => {
+          html += `<div style="font-size:11px;padding:2px 0;">[${s.lowerBound}-${s.upperBound}] <b>${s.severityLabel}</b></div>`;
+        });
+        html += `</div>`;
+      }
+      if (d.fallback) {
+        html += `<div class="section"><h4>Fallback 降级策略</h4>`;
+        html += `<div class="meta">缺失指标: ${d.fallback.missingIndicator||'?'} → ${d.fallback.strategy||'?'} (置信度 ${d.fallback.confidencePenalty||'?'})</div>`;
+        html += `</div>`;
+      }
+    } catch(e) {}
   } else if (node.type === "Event") {
     html += `<div class="section"><h4>deo:Disaster (灾害事件)</h4></div>`;
   }

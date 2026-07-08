@@ -162,6 +162,61 @@ def api_sparql_search():
     } for r in results])
 
 
+@app.route("/api/sparql/rule/<rule_id>")
+def api_sparql_rule(rule_id):
+    """Full rule detail: conditions, severity, fallback from RDF."""
+    g = converter.graph
+    SAUDI = "https://mazu.cma/saudi#"
+    DEO = "http://purl.org/disaster/deo#"
+
+    from rdflib import URIRef, RDF, RDFS
+    rule_uri = URIRef(f"{SAUDI}Hazard/{rule_id}")
+
+    conditions = []
+    severity_levels = []
+    fallback = None
+    hazard_type = ""
+
+    for s, p, o in g.triples((rule_uri, None, None)):
+        if str(p) == str(DEO + "hazardType"):
+            hazard_type = str(o).split("#")[-1] if "#" in str(o) else str(o).split("/")[-1]
+        elif str(p) == f"{SAUDI}hasCondition":
+            cond = {}
+            for _, cp, co in g.triples((o, None, None)):
+                key = str(cp).split("#")[-1]
+                val = str(co)
+                if "float" in val or "boolean" in val:
+                    val = val.split("^")[0].strip('"')
+                cond[key] = val
+            conditions.append(cond)
+        elif str(p) == f"{SAUDI}hasSeverityLevel":
+            sev = {}
+            for _, sp, so in g.triples((o, None, None)):
+                key = str(sp).split("#")[-1]
+                val = str(so)
+                if "float" in val:
+                    val = float(val.split("^")[0].strip('"'))
+                sev[key] = val
+            severity_levels.append(sev)
+        elif str(p) == f"{SAUDI}hasFallback":
+            fb = {}
+            for _, fp, fo in g.triples((o, None, None)):
+                key = str(fp).split("#")[-1]
+                val = str(fo)
+                if "float" in val:
+                    val = float(val.split("^")[0].strip('"'))
+                fb[key] = val
+            fallback = fb
+
+    return jsonify({
+        "rule_id": rule_id,
+        "hazard_type": hazard_type,
+        "conditions": conditions,
+        "severity_levels": severity_levels,
+        "fallback": fallback,
+    })
+
+
 @app.route("/api/sparql/events")
 def api_sparql_events():
     """Query all events in RDF graph."""

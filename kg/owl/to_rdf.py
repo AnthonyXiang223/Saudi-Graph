@@ -242,6 +242,7 @@ class SaudiDMDOConverter:
                 # Weight as a reified condition node
                 cond_node = BNode()
                 self.graph.add((cond_node, RDF.type, SAUDI.DetectionCondition))
+                self.graph.add((cond_node, SAUDI.indicator, ind_uri))
                 self.graph.add((cond_node, SAUDI.threshold, Literal(cond.get("value", 0), datatype=XSD.float)))
                 self.graph.add((cond_node, SAUDI.comparisonOp, Literal(cond.get("op", cond.get("condition", ">=")))))
                 self.graph.add((cond_node, SAUDI.weight, Literal(weight, datatype=XSD.float)))
