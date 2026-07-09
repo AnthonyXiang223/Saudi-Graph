@@ -57,11 +57,15 @@ def api_sparql_summary():
     edges = []
     seen_nodes = set()
 
-    # Extract Saudi-specific nodes (skip DMDO internal classes/axioms)
+    # Extract Saudi-specific nodes (skip DMDO internal classes/axioms + Grid/Observation nodes)
     PREFIX = "https://mazu.cma/saudi#"
+    SKIP = ["Grid/", "Observation"]
     for s, p, o in g.triples((None, None, None)):
         s_str = str(s)
         if PREFIX in s_str and s_str not in seen_nodes:
+            # Skip ephemeral Grid and Observation nodes
+            if any(x in s_str for x in SKIP):
+                continue
             seen_nodes.add(s_str)
             node_id = s_str.split("#")[-1]
             # Determine type
@@ -97,7 +101,11 @@ def api_sparql_summary():
 
     for s, p, o in g.triples((None, None, None)):
         rel = REL_MAP.get(str(p))
-        if rel and PREFIX in str(s) and PREFIX in str(o):
+        s_str, o_str = str(s), str(o)
+        # Skip edges involving Grid/Observation nodes
+        if any(x in s_str for x in SKIP) or any(x in o_str for x in SKIP):
+            continue
+        if rel and PREFIX in s_str and PREFIX in o_str:
             edges.append({
                 "from": str(s).split("#")[-1],
                 "to": str(o).split("#")[-1],
