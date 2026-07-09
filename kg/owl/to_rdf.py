@@ -19,20 +19,15 @@ DPO = Namespace("http://purl.org/disaster/dpo#")
 HIP = Namespace("http://purl.org/disaster/hip#")
 QUDT = Namespace("http://qudt.org/schema/qudt#")
 GEO_F = Namespace("http://www.opengis.net/ont/geosparql#")
+SSN = Namespace("http://www.w3.org/ns/ssn/")
+SYS = Namespace("http://www.ontology-of-units-of-measure.org/resource/om-2/system/")
+SF = Namespace("http://www.opengis.net/ont/sf#")
 
 NAMESPACES = {
-    "saudi": SAUDI,
-    "deo": DEO,
-    "dpo": DPO,
-    "hip": HIP,
-    "sosa": SOSA,
-    "geo": GEO,
-    "geof": GEO_F,
-    "time": TIME,
-    "prov": PROV,
-    "qudt": QUDT,
-    "owl": OWL,
-    "rdfs": RDFS,
+    "saudi": SAUDI, "deo": DEO, "dpo": DPO, "hip": HIP,
+    "sosa": SOSA, "ssn": SSN, "geo": GEO, "geof": GEO_F,
+    "sf": SF, "time": TIME, "prov": PROV, "qudt": QUDT,
+    "owl": OWL, "rdfs": RDFS,
 }
 
 
@@ -103,19 +98,51 @@ class SaudiDMDOConverter:
 
     # ── DataSource → prov:Entity ──
     def _add_data_sources(self):
+        """Create DataSource entities + SOSA/SSN Sensor/Platform/Procedure modeling."""
         sources = {
-            "DS1": ("ERA5 Monthly Reanalysis", "0.25 deg", "1940-present"),
-            "DS2": ("ERA5 Daily Reanalysis", "0.25 deg", "1940-present"),
-            "DS4": ("ERA5 Extremes", "0.25 deg", "1940-present"),
-            "DS8": ("GHCN-Daily Station Climatology", "station", "1991-2020"),
-            "DS10": ("GPM IMERG V07", "0.1 deg", "2000-present"),
-            "SST": ("OSTIA SST", "0.05 deg", "2007-present"),
+            "DS1": ("ERA5 Monthly Reanalysis", "0.25 deg", "1940-present",
+                    "ECMWF", "Atmospheric model + observational reanalysis", "Monthly"),
+            "DS2": ("ERA5 Daily Reanalysis", "0.25 deg", "1940-present",
+                    "ECMWF", "Atmospheric model + observational reanalysis", "Daily"),
+            "DS4": ("ERA5 Extremes", "0.25 deg", "1940-present",
+                    "ECMWF", "ERA5 aggregated daily max/min fields", "Daily"),
+            "DS8": ("GHCN-Daily Station Climatology", "station", "1991-2020",
+                    "NOAA NCEI", "Global Historical Climatology Network station normals", "Daily (climatology)"),
+            "DS10": ("GPM IMERG V07", "0.1 deg", "2000-present",
+                    "NASA/JAXA", "GPM satellite constellation — microwave + IR precipitation retrieval", "30-min"),
+            "SST": ("OSTIA SST", "0.05 deg", "2007-present",
+                    "UK Met Office", "Operational Sea Surface Temperature and Ice Analysis — satellite + in-situ", "Daily"),
         }
-        for src_id, (name, res, coverage) in sources.items():
-            uri = SAUDI[f"DataSource/{src_id}"]
-            self.graph.add((uri, RDF.type, PROV.Entity))
-            self.graph.add((uri, RDFS.label, Literal(src_id)))
-            self.graph.add((uri, RDFS.comment, Literal(f"{name}, {res}, {coverage}")))
+        for src_id, (name, res, coverage, platform, proc_desc, freq) in sources.items():
+            # ── DataSource entity (prov:Entity) ──
+            ds_uri = SAUDI[f"DataSource/{src_id}"]
+            self.graph.add((ds_uri, RDF.type, PROV.Entity))
+            self.graph.add((ds_uri, RDFS.label, Literal(src_id)))
+            self.graph.add((ds_uri, RDFS.comment, Literal(f"{name}, {res}, {coverage}")))
+
+            # ── SOSA/SSN Sensor ──
+            sensor_uri = SAUDI[f"Sensor/{src_id}"]
+            self.graph.add((sensor_uri, RDF.type, SOSA.Sensor))
+            self.graph.add((sensor_uri, RDF.type, SSN.Sensor))
+            self.graph.add((sensor_uri, RDFS.label, Literal(f"{name}")))
+            self.graph.add((sensor_uri, SSN.frequency, Literal(freq)))
+            self.graph.add((sensor_uri, RDFS.comment, Literal(proc_desc)))
+
+            # ── SSN Platform ──
+            platform_uri = SAUDI[f"Platform/{platform.replace(' ', '_')}"]
+            self.graph.add((platform_uri, RDF.type, SSN.System))
+            self.graph.add((platform_uri, RDFS.label, Literal(platform)))
+            self.graph.add((platform_uri, SSN.hasSubSystem, sensor_uri))
+
+            # ── SOSA Procedure (observation method) ──
+            proc_uri = SAUDI[f"Procedure/{src_id}"]
+            self.graph.add((proc_uri, RDF.type, SOSA.Procedure))
+            self.graph.add((proc_uri, RDFS.label, Literal(f"{src_id} observation procedure")))
+            self.graph.add((proc_uri, RDFS.comment, Literal(proc_desc)))
+
+            # ── Link DataSource ↔ Sensor/Procedure ──
+            self.graph.add((ds_uri, SAUDI.hasSensor, sensor_uri))
+            self.graph.add((ds_uri, SAUDI.hasProcedure, proc_uri))
 
     # ── HazardType → hip:SpecificHazard ──
     def _add_hazard_types(self):
@@ -391,21 +418,62 @@ class SaudiDMDOConverter:
                         if not cmp_fn(val, threshold_val):
                             continue
 
-                    # Create SOSA Observation
+                    # ── SOSA/SSN complete Observation ──
                     obs_node = BNode()
                     lat = float(lats[i])
                     lon_val = float(lons[j])
 
+                    # FeatureOfInterest: GeoSPARQL geo:Feature with sf:Point geometry
+                    foi_uri = SAUDI[f"Grid/{lat:.2f}_{lon_val:.2f}"]
+                    geom_node = BNode()
+                    wkt = f"POINT({lon_val} {lat})"
+
+                    self.graph.add((foi_uri, RDF.type, GEO_F.Feature))
+                    self.graph.add((foi_uri, RDF.type, SF.Point))
+                    self.graph.add((foi_uri, RDFS.label, Literal(f"Grid({lat:.2f}N,{lon_val:.2f}E)")))
+                    self.graph.add((foi_uri, GEO_F.hasGeometry, geom_node))
+                    self.graph.add((geom_node, RDF.type, SF.Point))
+                    self.graph.add((geom_node, GEO_F.asWKT, Literal(wkt, datatype=GEO_F.wktLiteral)))
+                    self.graph.add((geom_node, GEO_F.asGML, Literal(f"<gml:Point srsName='EPSG:4326'><gml:pos>{lat} {lon_val}</gml:pos></gml:Point>")))
+
+                    # Observation core
                     self.graph.add((obs_node, RDF.type, SOSA.Observation))
                     self.graph.add((obs_node, SOSA.observedProperty, ind_uri))
-                    self.graph.add((obs_node, SOSA.hasSimpleResult, Literal(float(val), datatype=XSD.float)))
+                    self.graph.add((obs_node, SOSA.hasFeatureOfInterest, foi_uri))
                     self.graph.add((obs_node, SOSA.resultTime, Literal(formatted_date, datatype=XSD.date)))
+                    self.graph.add((obs_node, SOSA.phenomenonTime, Literal(formatted_date, datatype=XSD.date)))
 
-                    # Spatial: link to grid coordinates
-                    grid_uri = SAUDI[f"Grid/{lat:.2f}_{lon_val:.2f}"]
-                    self.graph.add((grid_uri, RDF.type, GEO_F.Feature))
-                    self.graph.add((grid_uri, GEO_F.hasGeometry, Literal(f"POINT({lon_val} {lat})", datatype=GEO_F.wktLiteral)))
-                    self.graph.add((obs_node, SOSA.hasFeatureOfInterest, grid_uri))
+                    # Structured Result (SOSA Result class)
+                    result_node = BNode()
+                    self.graph.add((result_node, RDF.type, SOSA.Result))
+                    self.graph.add((result_node, QUDT.numericValue, Literal(float(val), datatype=XSD.float)))
+                    # Map unit
+                    op = self._op_by_id.get(ind_id, {})
+                    unit_str = op.get("output_unit", "")
+                    unit_map = {"degC": QUDT.DegreeCelsius, "mm": QUDT.MilliM, "m s-1": QUDT["M-PER-SEC"],
+                                "W m-2": QUDT["W-PER-M2"], "J kg-1": QUDT["J-PER-KiloGM"], "%": QUDT.Percent,
+                                "kg m-2": QUDT["KiloGM-PER-M2"], "Pa s-1": QUDT["PA-PER-SEC"],
+                                "kg m-1 s-1": QUDT["KiloGM-PER-M-SEC"], "kPa": QUDT.KiloPA,
+                                "gpm": QUDT["M"], "K": QUDT.Kelvin, "days": QUDT.Day, "km": QUDT.KiloM,
+                                "s-1": QUDT["PER-SEC"], "steps": None, "score": None, "flag": None,
+                                "kg m-2 s-1": QUDT["KiloGM-PER-M2-SEC"]}
+                    if unit_str in unit_map and unit_map[unit_str] is not None:
+                        self.graph.add((result_node, QUDT.unit, unit_map[unit_str]))
+                    self.graph.add((obs_node, SOSA.hasResult, result_node))
+                    self.graph.add((obs_node, SOSA.hasSimpleResult, Literal(float(val), datatype=XSD.float)))
+
+                    # Link to Sensor + Procedure (SSN)
+                    src = op.get("source", "")
+                    if src:
+                        for s in src.replace("+", " ").split():
+                            s = s.strip()
+                            if s:
+                                sensor_uri = SAUDI[f"Sensor/{s}"]
+                                proc_uri = SAUDI[f"Procedure/{s}"]
+                                if (sensor_uri, RDF.type, SOSA.Sensor) in self.graph:
+                                    self.graph.add((obs_node, SOSA.madeBySensor, sensor_uri))
+                                if (proc_uri, RDF.type, SOSA.Procedure) in self.graph:
+                                    self.graph.add((obs_node, SOSA.usedProcedure, proc_uri))
 
                     count += 1
 

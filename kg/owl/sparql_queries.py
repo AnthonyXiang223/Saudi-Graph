@@ -274,6 +274,150 @@ class SPARQLQueries:
         return self._run(q)
 
 
+    # ═══════════════════════════════════════════════════════════
+    # Layer 5: GeoSPARQL spatial queries (P1)
+    # ═══════════════════════════════════════════════════════════
+
+    def observations_within_radius(self, indicator_id: str, center_lat: float,
+                                    center_lon: float, radius_km: float,
+                                    date_str: str = None, min_value: float = None) -> List[Dict]:
+        """
+        GeoSPARQL: find observations within radius of a point.
+        Uses OGC GeoSPARQL 1.1 geof:distance function.
+
+        Args:
+            indicator_id: e.g. "tmax_c"
+            center_lat, center_lon: center point in decimal degrees
+            radius_km: search radius in kilometers
+        """
+        ind_uri = _uri("Indicator", indicator_id)
+        deg_radius = radius_km / 111.32  # ~degrees at equator
+
+        date_filter = ""
+        val_filter = ""
+        if date_str:
+            date_clean = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}" if len(date_str) == 8 else date_str
+            date_filter = f'FILTER(?date = "{date_clean}"^^xsd:date)'
+        if min_value is not None:
+            val_filter = f"FILTER(?val > {min_value})"
+
+        q = PREFIXES + f"""
+        SELECT ?lat ?lon ?val ?date WHERE {{
+            ?obs sosa:observedProperty {ind_uri} ;
+                 sosa:hasResult ?result ;
+                 sosa:resultTime ?date ;
+                 sosa:hasFeatureOfInterest ?foi .
+            ?result qudt:numericValue ?val .
+            ?foi geof:hasGeometry ?geom .
+            ?geom geof:asWKT ?wkt .
+
+            # GeoSPARQL spatial filter
+            BIND(geof:distance(
+                ?wkt,
+                "POINT({center_lon} {center_lat})"^^geof:wktLiteral,
+                <http://www.opengis.net/def/uom/OGC/1.0/degree>
+            ) AS ?dist)
+            FILTER(?dist < {deg_radius})
+
+            BIND(STRBEFORE(STRAFTER(STR(?wkt), "POINT("), " ") AS ?lonStr)
+            BIND(STRBEFORE(STRAFTER(STR(?wkt), " "), ")") AS ?latStr)
+            BIND(xsd:float(?lonStr) AS ?lon)
+            BIND(xsd:float(?latStr) AS ?lat)
+            {date_filter}
+            {val_filter}
+        }}
+        ORDER BY ?dist
+        LIMIT 100
+        """
+        return self._run(q)
+
+    def events_intersecting_region(self, region_id: str) -> List[Dict]:
+        """
+        GeoSPARQL: find events whose spatial extent intersects a region.
+        Uses geof:sfIntersects for topological spatial query.
+        """
+        reg_uri = _uri("Region", region_id)
+        q = PREFIXES + f"""
+        SELECT ?event ?hazardType ?severity WHERE {{
+            {reg_uri} geof:hasGeometry ?regGeom .
+            ?regGeom geof:asWKT ?regWKT .
+
+            ?event a deo:Disaster ;
+                   deo:hazardType ?hazardType ;
+                   dpo:Severity ?severity ;
+                   saudi:centroidLat ?lat ;
+                   saudi:centroidLon ?lon .
+
+            # Check if event centroid falls within region polygon
+            BIND(STRDT(CONCAT("POINT(", STR(?lon), " ", STR(?lat), ")"), geof:wktLiteral) AS ?eventWKT)
+            FILTER(geof:sfIntersects(?eventWKT, ?regWKT))
+        }}
+        ORDER BY DESC(?severity)
+        """
+        return self._run(q)
+
+    def spatial_aggregation(self, indicator_id: str, date_str: str,
+                            region_id: str = None) -> List[Dict]:
+        """
+        GeoSPARQL: aggregate observations by region.
+        Returns count, max, avg for an indicator within a region.
+        """
+        ind_uri = _uri("Indicator", indicator_id)
+        date_clean = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}" if len(date_str) == 8 else date_str
+
+        region_filter = ""
+        if region_id:
+            reg_uri = _uri("Region", region_id)
+            region_filter = f"""
+            {reg_uri} geof:hasGeometry ?regGeom .
+            ?regGeom geof:asWKT ?regWKT .
+            FILTER(geof:sfIntersects(?wkt, ?regWKT))
+            """
+
+        q = PREFIXES + f"""
+        SELECT (COUNT(?obs) AS ?count) (MAX(?val) AS ?maxVal) (AVG(?val) AS ?avgVal) WHERE {{
+            ?obs sosa:observedProperty {ind_uri} ;
+                 sosa:hasResult ?result ;
+                 sosa:resultTime "{date_clean}"^^xsd:date ;
+                 sosa:hasFeatureOfInterest ?foi .
+            ?result qudt:numericValue ?val .
+            ?foi geof:hasGeometry ?geom .
+            ?geom geof:asWKT ?wkt .
+            {region_filter}
+        }}
+        """
+        return self._run(q)
+
+    def neighborhood_query(self, indicator_id: str, date_str: str,
+                           hotspot_threshold: float) -> List[Dict]:
+        """
+        Find spatial clusters of observations exceeding a threshold.
+        Returns adjacent grid cells that all exceed the threshold — implicit GeoSPARQL clustering.
+        """
+        ind_uri = _uri("Indicator", indicator_id)
+        date_clean = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}" if len(date_str) == 8 else date_str
+
+        q = PREFIXES + f"""
+        SELECT ?lat ?lon ?val WHERE {{
+            ?obs sosa:observedProperty {ind_uri} ;
+                 sosa:hasResult ?result ;
+                 sosa:resultTime "{date_clean}"^^xsd:date ;
+                 sosa:hasFeatureOfInterest ?foi .
+            ?result qudt:numericValue ?val .
+            ?foi geof:hasGeometry ?geom .
+            ?geom geof:asWKT ?wkt .
+            FILTER(?val >= {hotspot_threshold})
+            BIND(STRBEFORE(STRAFTER(STR(?wkt), "POINT("), " ") AS ?lonStr)
+            BIND(STRBEFORE(STRAFTER(STR(?wkt), " "), ")") AS ?latStr)
+            BIND(xsd:float(?lonStr) AS ?lon)
+            BIND(xsd:float(?latStr) AS ?lat)
+        }}
+        ORDER BY DESC(?val)
+        LIMIT 200
+        """
+        return self._run(q)
+
+
 def demo():
     """Run a quick demo of SPARQL queries against the Saudi KG."""
     import sys, os
