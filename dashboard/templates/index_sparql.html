@@ -80,6 +80,38 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
   <div class="panel-body" id="detail"></div>
 
+  <!-- SOSA Observation Panel -->
+  <div style="padding:8px 12px 4px;font-size:12px;color:#8ab4f8;display:flex;align-items:center;gap:8px;">
+    <span>SOSA 观测查询</span>
+    <span style="font-size:10px;color:#6b7280;">阈值过滤 · 空间定位</span>
+  </div>
+  <div style="padding:0 12px 6px;display:flex;gap:5px;flex-wrap:wrap;">
+    <input type="text" id="obsDate" value="2025-08-19" style="width:90px;font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;" placeholder="日期">
+    <select id="obsIndicator" style="font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;">
+      <option value="tmax_c">tmax_c</option>
+      <option value="daily_precip_total">daily_precip_total</option>
+      <option value="cape">cape</option>
+      <option value="t2m_c">t2m_c</option>
+      <option value="heat_index_c">heat_index_c</option>
+      <option value="wind10_speed">wind10_speed</option>
+      <option value="rh2m">rh2m</option>
+      <option value="sst_celsius">sst_celsius</option>
+      <option value="pwat">pwat</option>
+      <option value="ivt">ivt</option>
+      <option value="ds10_max_1h">ds10_max_1h</option>
+    </select>
+    <select id="obsOp" style="font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;">
+      <option value=">=">>=</option>
+      <option value=">">></option>
+      <option value="<="><=</option>
+      <option value="<"><</option>
+    </select>
+    <input type="text" id="obsThresh" value="45" style="width:50px;font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;">
+    <button onclick="queryObservations()" style="background:#0891b2;border:none;color:#fff;padding:5px 10px;border-radius:4px;font-size:11px;cursor:pointer;">查询</button>
+    <button onclick="createObservations()" style="background:#374151;border:none;color:#c0c0c0;padding:5px 8px;border-radius:4px;font-size:10px;cursor:pointer;">+创建</button>
+  </div>
+  <div id="obsResults" style="padding:0 12px 4px;max-height:120px;overflow-y:auto;font-size:10px;"></div>
+
   <div class="detect-bar">
     <input type="text" id="evDate" value="2025-08-19" style="width:90px;">
     <select id="evHazard"><option value="">全部</option><option value="flash_flood">山洪</option><option value="extreme_heat">高温</option><option value="dust_storm">沙尘</option><option value="coastal_humid_heat">沿海</option></select>
@@ -274,6 +306,51 @@ function doSearch() {
       `<div class="sr" onclick="showDetail('${i.id}')"><span class="srid">${i.id}</span><br><span style="color:#9ca3af;">${(i.description||"").slice(0,50)}</span></div>`
     ).join("") || `<div class="sr" style="color:#6b7280;">无结果</div>`;
   }, 250);
+}
+
+// ── SOSA Observations ──
+async function queryObservations() {
+  const date = document.getElementById("obsDate").value;
+  const ind = document.getElementById("obsIndicator").value;
+  const op = document.getElementById("obsOp").value;
+  const thresh = document.getElementById("obsThresh").value || "0";
+  setStatus(`SPARQL: ${ind} ${op} ${thresh} @ ${date}`);
+
+  const params = new URLSearchParams({ indicator: ind, date, min_value: op.startsWith(">") ? thresh : thresh });
+  const r = await fetch(`/api/sparql/observations/query?${params}`);
+  const results = await r.json();
+
+  if (!results.length) {
+    document.getElementById("obsResults").innerHTML = `<div style="color:#6b7280;padding:4px;">无匹配观测</div>`;
+  } else {
+    const maxShow = 10;
+    const lines = results.slice(0, maxShow).map(o =>
+      `<div style="padding:2px 0;color:#e0e0e0;">📍 (${parseFloat(o.lat).toFixed(1)}°N, ${parseFloat(o.lon).toFixed(1)}°E) → <b style="color:#8ab4f8;">${parseFloat(o.value).toFixed(2)}</b></div>`
+    ).join("");
+    const more = results.length > maxShow ? `<div style="color:#6b7280;">... 共 ${results.length} 条观测</div>` : "";
+    document.getElementById("obsResults").innerHTML = lines + more;
+  }
+  setStatus(`SPARQL 观测: ${results.length} 条`);
+}
+
+async function createObservations() {
+  const date = document.getElementById("obsDate").value;
+  const ind = document.getElementById("obsIndicator").value;
+  const op = document.getElementById("obsOp").value;
+  const thresh = parseFloat(document.getElementById("obsThresh").value) || 0;
+  setStatus(`创建 Observation: ${ind} @ ${date}...`);
+
+  const r = await fetch("/api/sparql/observations/create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date, indicator_ids: [ind],
+      threshold_filter: { [ind]: [op, thresh] }
+    })
+  });
+  const d = await r.json();
+  document.getElementById("obsResults").innerHTML = `<div style="color:#10b981;padding:4px;">✅ 已创建 ${d.observations_created} 条观测 · 图谱共 ${d.total_triples} 三元组</div>`;
+  setStatus(`已创建 ${d.observations_created} SOSA Observation`);
 }
 
 // ── Event detection ──

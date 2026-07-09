@@ -230,6 +230,60 @@ def api_sparql_events():
 
 
 # ═══════════════════════════════════════════
+# SPARQL API — SOSA Observation layer
+# ═══════════════════════════════════════════
+
+@app.route("/api/sparql/observations/create", methods=["POST"])
+def api_sparql_create_observations():
+    """Create SOSA Observation triples from NetCDF data.
+    Body: {date, indicator_ids, threshold_filter}
+    """
+    body = request.get_json() or {}
+    date_str = body.get("date", "2025-08-19")
+    indicator_ids = body.get("indicator_ids", None)
+    threshold_filter = body.get("threshold_filter", None)
+
+    if threshold_filter:
+        threshold_filter = {k: tuple(v) for k, v in threshold_filter.items()}
+
+    n = converter.add_observations(
+        date_str=date_str,
+        indicator_ids=indicator_ids,
+        threshold_filter=threshold_filter
+    )
+    return jsonify({
+        "date": date_str,
+        "observations_created": n,
+        "total_triples": len(converter.graph)
+    })
+
+
+@app.route("/api/sparql/observations/query")
+def api_sparql_query_observations():
+    """Query SOSA Observations by indicator + date + min value."""
+    indicator_id = request.args.get("indicator", "")
+    date_str = request.args.get("date", "")
+    min_value = request.args.get("min_value", None)
+
+    if not indicator_id:
+        return jsonify({"error": "indicator required"}), 400
+
+    if min_value:
+        min_value = float(min_value)
+
+    results = sq.observation_by_indicator(indicator_id, date_str or None, min_value)
+    return jsonify(list(results))
+
+
+@app.route("/api/sparql/observations/stats")
+def api_sparql_observation_stats():
+    """Get observation summary stats for a date."""
+    date_str = request.args.get("date", "2025-08-19")
+    results = sq.observations_summary(date_str)
+    return jsonify(list(results))
+
+
+# ═══════════════════════════════════════════
 # Original API — Event detection (needs live NetCDF)
 # ═══════════════════════════════════════════
 
