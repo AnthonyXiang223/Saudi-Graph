@@ -418,6 +418,105 @@ class SPARQLQueries:
         return self._run(q)
 
 
+    # ═══════════════════════════════════════════════════════════
+    # Layer 6: OWL-Time + PROV-O queries (P2)
+    # ═══════════════════════════════════════════════════════════
+
+    def temporal_event_sequence(self, hazard_type: str = None) -> List[Dict]:
+        """OWL-Time: find cascading event chains via time:before/after."""
+        type_filter = ""
+        if hazard_type:
+            ht_uri = _uri("HazardType", hazard_type)
+            type_filter = f"?event deo:hazardType {ht_uri} ."
+
+        q = PREFIXES + f"""
+        SELECT ?event1 ?event2 ?relation WHERE {{
+            {{ ?event1 time:before ?event2 . BIND("before" AS ?relation) }}
+            UNION
+            {{ ?event1 time:intervalEquals ?event2 . BIND("co-occurs" AS ?relation) }}
+            UNION
+            {{ ?event1 deo:possiblyCauses ?event2 . BIND("possiblyCauses" AS ?relation) }}
+            {type_filter}
+        }}
+        LIMIT 50
+        """
+        return self._run(q)
+
+    def event_timeline(self, date_start: str = None, date_end: str = None) -> List[Dict]:
+        """OWL-Time: get all events ordered by temporal scoping."""
+        date_filter = ""
+        if date_start:
+            ds = f"{date_start[:4]}-{date_start[4:6]}-{date_start[6:8]}" if len(date_start) == 8 else date_start
+            date_filter += f'FILTER(?date >= "{ds}"^^xsd:date)'
+        if date_end:
+            de = f"{date_end[:4]}-{date_end[4:6]}-{date_end[6:8]}" if len(date_end) == 8 else date_end
+            date_filter += f'FILTER(?date <= "{de}"^^xsd:date)'
+
+        q = PREFIXES + f"""
+        SELECT ?event ?hazardType ?severity ?date ?duration WHERE {{
+            ?event a deo:Disaster ;
+                   deo:hazardType ?hazardType ;
+                   dpo:Severity ?severity ;
+                   deo:hasTemporalScope ?t .
+            ?t time:inXSDDate ?date .
+            OPTIONAL {{ ?t time:hasDuration ?d . ?d time:hours ?duration . }}
+            {date_filter}
+        }}
+        ORDER BY ?date DESC(?severity)
+        """
+        return self._run(q)
+
+    def provenance_chain(self, indicator_id: str) -> List[Dict]:
+        """PROV-O: complete provenance tracing for an indicator."""
+        ind_uri = _uri("Indicator", indicator_id)
+        q = PREFIXES + f"""
+        SELECT ?entity ?activity ?source ?derivedFrom WHERE {{
+            {{
+                {ind_uri} prov:wasDerivedFrom ?derivedFrom .
+            }}
+            UNION
+            {{
+                {ind_uri} prov:wasGeneratedBy ?activity .
+                ?activity rdfs:label ?activityLabel .
+            }}
+            UNION
+            {{
+                {ind_uri} prov:wasAttributedTo ?source .
+            }}
+        }}
+        """
+        return self._run(q)
+
+    def provenance_event(self, event_id: str) -> List[Dict]:
+        """PROV-O: trace how an event was detected."""
+        ev_uri = _uri("Event", event_id)
+        q = PREFIXES + f"""
+        SELECT ?agent ?activity ?time WHERE {{
+            {ev_uri} prov:wasGeneratedBy ?gen .
+            ?gen prov:wasAssociatedWith ?agent ;
+                 prov:startedAtTime ?time .
+        }}
+        """
+        return self._run(q)
+
+    def cascading_hazard_chain(self, start_event_id: str) -> List[Dict]:
+        """Trace cascading hazards: follow deo:possiblyCauses + time:before chain."""
+        ev_uri = _uri("Event", start_event_id)
+        q = PREFIXES + f"""
+        SELECT ?next ?hazardType ?severity ?relation WHERE {{
+            {{ {ev_uri} deo:possiblyCauses ?next . BIND("possiblyCauses" AS ?relation) }}
+            UNION
+            {{ {ev_uri} time:before ?next . BIND("before" AS ?relation) }}
+            UNION
+            {{ {ev_uri} time:intervalEquals ?next . BIND("co-occurs" AS ?relation) }}
+            ?next a deo:Disaster ;
+                  deo:hazardType ?hazardType ;
+                  dpo:Severity ?severity .
+        }}
+        """
+        return self._run(q)
+
+
 def demo():
     """Run a quick demo of SPARQL queries against the Saudi KG."""
     import sys, os

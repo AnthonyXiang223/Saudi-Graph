@@ -297,17 +297,137 @@ class SaudiDMDOConverter:
 
     # ── Operator chains → derived_from as SOSA observation derivation ──
     def _add_operator_chains(self):
+        """PROV-O provenance chains + co_occurs_with links."""
         for op in self.operators:
             out_uri = SAUDI[f"Indicator/{op['id']}"]
-            for inp_id in op.get("inputs", []):
-                inp_uri = SAUDI[f"Indicator/{inp_id}"]
-                # derived_from: output ← input
-                self.graph.add((out_uri, PROV.wasDerivedFrom, inp_uri))
+
+            # ── PROV-O derivation chain ──
+            if op.get("inputs"):
+                derivation_node = BNode()
+                self.graph.add((derivation_node, RDF.type, PROV.Derivation))
+                self.graph.add((out_uri, PROV.wasDerivedFrom, derivation_node))
+                for inp_id in op["inputs"]:
+                    inp_uri = SAUDI[f"Indicator/{inp_id}"]
+                    self.graph.add((out_uri, PROV.wasDerivedFrom, inp_uri))
+                    self.graph.add((derivation_node, PROV.entity, inp_uri))
+                    # PROV-O: what was used
+                    usage_node = BNode()
+                    self.graph.add((usage_node, RDF.type, PROV.Usage))
+                    self.graph.add((derivation_node, PROV.used, inp_uri))
+
+                # Generator activity
+                activity_node = BNode()
+                self.graph.add((activity_node, RDF.type, PROV.Activity))
+                self.graph.add((activity_node, RDFS.label, Literal(f"Derivation of {op['id']}")))
+                self.graph.add((out_uri, PROV.wasGeneratedBy, activity_node))
+                if op.get("expression"):
+                    self.graph.add((activity_node, SAUDI.expression, Literal(op["expression"])))
+
+            # ── PROV-O: data source attribution ──
+            src = op.get("source", "")
+            if src:
+                for s in src.replace("+", " ").split():
+                    s = s.strip()
+                    if s:
+                        src_uri = SAUDI[f"DataSource/{s}"]
+                        self.graph.add((out_uri, PROV.wasAttributedTo, src_uri))
+                        # provenance record
+                        prov_node = BNode()
+                        self.graph.add((prov_node, RDF.type, PROV.Entity))
+                        self.graph.add((prov_node, PROV.wasDerivedFrom, src_uri))
 
             # co_occurs_with
             for co_id in op.get("co_occurs_with", []):
                 co_uri = SAUDI[f"Indicator/{co_id}"]
                 self.graph.add((out_uri, SAUDI.coOccursWith, co_uri))
+
+    # ═══════════════════════════════════════════════════════════
+    # OWL-Time + Cascading Events
+    # ═══════════════════════════════════════════════════════════
+
+    def link_events_cascading(self, events: list):
+        """
+        OWL-Time: establish temporal relationships between events.
+        Creates time:before / time:after edges for cascading event chains.
+
+        Events from the same date with overlapping spatial extent are linked
+        as time:hasInside (co-occurring). Events on consecutive dates with
+        spatial overlap receive deo:possiblyCauses links.
+
+        Args:
+            events: List of Event dataclass objects (must have date, centroid_lat,
+                    centroid_lon, hazard_type, event_id)
+        """
+        # Group events by date
+        by_date = {}
+        for ev in events:
+            date_str = ev.date.replace("-", "")
+            by_date.setdefault(date_str, []).append(ev)
+
+        sorted_dates = sorted(by_date.keys())
+
+        for i, date1 in enumerate(sorted_dates):
+            for ev1 in by_date[date1]:
+                ev1_uri = SAUDI[f"Event/{ev1.event_id}"]
+
+                # ── Same-date events: temporal co-occurrence ──
+                for ev2 in by_date[date1]:
+                    if ev2.event_id == ev1.event_id:
+                        continue
+                    ev2_uri = SAUDI[f"Event/{ev2.event_id}"]
+                    # Check spatial proximity (< 200km)
+                    dist = ((ev1.centroid_lat - ev2.centroid_lat) ** 2 +
+                            (ev1.centroid_lon - ev2.centroid_lon) ** 2) ** 0.5
+                    if dist < 2.0:  # ~200 km
+                        # OWL-Time: same time interval
+                        interval_node = BNode()
+                        self.graph.add((interval_node, RDF.type, TIME.Interval))
+                        self.graph.add((interval_node, TIME.hasBeginning, ev1_uri))
+                        self.graph.add((interval_node, TIME.hasEnd, ev2_uri))
+                        self.graph.add((ev1_uri, TIME.intervalEquals, ev2_uri))
+
+                        # deo:possiblyCauses — cascading hazard chain
+                        self.graph.add((ev1_uri, DEO.possiblyCauses, ev2_uri))
+
+                # ── Consecutive-date events: temporal sequencing ──
+                if i + 1 < len(sorted_dates):
+                    next_date = sorted_dates[i + 1]
+                    # Check if dates are within 3 days
+                    d1 = int(date1)
+                    d2 = int(next_date)
+                    if 1 <= d2 - d1 <= 3:
+                        for ev_next in by_date[next_date]:
+                            dist = ((ev1.centroid_lat - ev_next.centroid_lat) ** 2 +
+                                    (ev1.centroid_lon - ev_next.centroid_lon) ** 2) ** 0.5
+                            if dist < 3.0:  # ~300 km for temporal chain
+                                ev_next_uri = SAUDI[f"Event/{ev_next.event_id}"]
+                                # OWL-Time: before
+                                self.graph.add((ev1_uri, TIME.before, ev_next_uri))
+                                self.graph.add((ev_next_uri, TIME.after, ev1_uri))
+                                # Causal chain
+                                self.graph.add((ev1_uri, DEO.possiblyCauses, ev_next_uri))
+
+    # ═══════════════════════════════════════════════════════════
+    # PROV-O: NetCDF observation provenance
+    # ═══════════════════════════════════════════════════════════
+
+    def _add_observation_provenance(self, obs_node, ind_id: str, date_clean: str, nc_path: str):
+        """Add PROV-O provenance records for a SOSA Observation."""
+        # NetCDF file as PROV Entity
+        nc_uri = SAUDI[f"NetCDF/{date_clean}"]
+        self.graph.add((nc_uri, RDF.type, PROV.Entity))
+        self.graph.add((nc_uri, RDFS.label, Literal(f"saudi_indicators_{date_clean}.nc")))
+        self.graph.add((nc_uri, PROV.atLocation, Literal(nc_path)))
+
+        # Observation was derived from NetCDF file
+        self.graph.add((obs_node, PROV.wasDerivedFrom, nc_uri))
+
+        # Generation activity
+        gen_node = BNode()
+        self.graph.add((gen_node, RDF.type, PROV.Activity))
+        self.graph.add((gen_node, RDFS.label, Literal(f"Observation extraction {ind_id} @ {date_clean}")))
+        self.graph.add((obs_node, PROV.wasGeneratedBy, gen_node))
+        self.graph.add((gen_node, PROV.used, SAUDI[f"Indicator/{ind_id}"]))
 
     # ═══════════════════════════════════════════════════════════
     # Observation layer — NetCDF values → SOSA Observation instances
@@ -475,6 +595,9 @@ class SaudiDMDOConverter:
                                 if (proc_uri, RDF.type, SOSA.Procedure) in self.graph:
                                     self.graph.add((obs_node, SOSA.usedProcedure, proc_uri))
 
+                    # PROV-O: provenance from NetCDF file
+                    self._add_observation_provenance(obs_node, ind_id, date_clean, nc_path)
+
                     count += 1
 
         ds.close()
@@ -503,21 +626,47 @@ class SaudiDMDOConverter:
         self.graph.add((disaster_uri, DEO.hazardType, hazard_type_uri))
         self.graph.add((disaster_uri, RDFS.label, Literal(event.event_id)))
 
-        # Temporal scope
-        time_node = BNode()
-        self.graph.add((time_node, RDF.type, TIME.Instant))
+        # ── OWL-Time: temporal scope with proper Instant ──
         date_str = event.date
         formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}" if len(date_str) == 8 else date_str
-        self.graph.add((time_node, TIME.inXSDDate, Literal(formatted, datatype=XSD.date)))
-        self.graph.add((disaster_uri, DEO.hasTemporalScope, time_node))
 
-        # Spatial scope (centroid)
+        time_node = BNode()
+        self.graph.add((time_node, RDF.type, TIME.Instant))
+        self.graph.add((time_node, TIME.inXSDDate, Literal(formatted, datatype=XSD.date)))
+        self.graph.add((time_node, TIME.inXSDDateTimeStamp, Literal(f"{formatted}T00:00:00Z", datatype=XSD.dateTimeStamp)))
+        self.graph.add((disaster_uri, DEO.hasTemporalScope, time_node))
+        self.graph.add((disaster_uri, TIME.hasTime, time_node))
+
+        # OWL-Time: duration (24h event window)
+        dur_node = BNode()
+        self.graph.add((dur_node, RDF.type, TIME.Duration))
+        self.graph.add((dur_node, TIME.hours, Literal(24, datatype=XSD.integer)))
+        self.graph.add((time_node, TIME.hasDuration, dur_node))
+
+        # ── Spatial scope ──
+        centroid_geom = BNode()
+        wkt = f"POINT({event.centroid_lon} {event.centroid_lat})"
+        self.graph.add((centroid_geom, RDF.type, SF.Point))
+        self.graph.add((centroid_geom, GEO_F.asWKT, Literal(wkt, datatype=GEO_F.wktLiteral)))
+        self.graph.add((disaster_uri, GEO_F.hasGeometry, centroid_geom))
         self.graph.add((disaster_uri, SAUDI.centroidLat, Literal(event.centroid_lat, datatype=XSD.float)))
         self.graph.add((disaster_uri, SAUDI.centroidLon, Literal(event.centroid_lon, datatype=XSD.float)))
         self.graph.add((disaster_uri, SAUDI.areaKm2, Literal(event.area_km2, datatype=XSD.float)))
 
-        # Severity
+        # ── DPO Severity ──
         self.graph.add((disaster_uri, DPO.Severity, Literal(event.severity_score, datatype=XSD.float)))
+
+        # ── PROV-O: event generation ──
+        gen_node = BNode()
+        self.graph.add((gen_node, RDF.type, PROV.Activity))
+        self.graph.add((gen_node, RDFS.label, Literal(f"Event detection {event.event_id}")))
+        self.graph.add((gen_node, PROV.startedAtTime, Literal(formatted, datatype=XSD.date)))
+        self.graph.add((disaster_uri, PROV.wasGeneratedBy, gen_node))
+        # Associate the detection engine as the software agent
+        engine_uri = SAUDI.SoftwareAgent
+        self.graph.add((engine_uri, RDF.type, PROV.SoftwareAgent))
+        self.graph.add((engine_uri, RDFS.label, Literal("Saudi Event Detector v2")))
+        self.graph.add((gen_node, PROV.wasAssociatedWith, engine_uri))
 
         # Region
         region_uri = SAUDI[f"Region/{event.region.split(',')[0].strip().replace(' ', '_')}"]

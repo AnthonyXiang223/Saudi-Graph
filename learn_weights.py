@@ -29,9 +29,10 @@ HAZARD_CONFIG = {
         "current_weights": [0.32, 0.24, 0.12, 0.18, 0.14, 0.00],
     },
     "extreme_heat": {
-        "indicators": ["tmax_c", "heat_index_c", "t2m_anomaly_c", "heatwave_duration_days",
-                        "vpd_kpa"],
-        "current_weights": [0.30, 0.20, 0.15, 0.25, 0.10],
+        # 只用因果指标，不用后果指标 (heat_index_c 是 T+RH 算出来的结果，不是原因)
+        "indicators": ["tmax_c", "t2m_anomaly_c", "heatwave_duration_days",
+                        "vpd_kpa", "dewpoint_depression_c", "rh2m"],
+        "current_weights": [0.35, 0.20, 0.25, 0.12, 0.00, 0.08],
     },
 }
 
