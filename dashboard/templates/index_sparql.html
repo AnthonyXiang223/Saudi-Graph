@@ -1,57 +1,91 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>沙特极端事件知识图谱 | DMDO-OWL | MAZU</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAZU 知识图谱 | DMDO-OWL + GeoSPARQL + OWL-Time</title>
 <script src="/static/vis-network.min.js"></script>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1923; color: #e0e0e0; height: 100vh; display: flex; overflow: hidden; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1923;color:#e0e0e0;height:100vh;display:flex;overflow:hidden}
+#panel{width:370px;min-width:370px;background:#1a2530;display:flex;flex-direction:column;border-right:1px solid #2a3a48}
+.panel-header{padding:14px 16px 10px;border-bottom:1px solid #2a3a48}
+.panel-header h2{font-size:16px;color:#8ab4f8}
+.panel-header .sub{font-size:11px;color:#6b7280;margin-top:4px}
+.panel-body{flex:1;overflow-y:auto;padding:12px}
 
-#panel { width: 350px; min-width: 350px; background: #1a2530; display: flex; flex-direction: column; border-right: 1px solid #2a3a48; }
-.panel-header { padding: 14px 16px 10px; border-bottom: 1px solid #2a3a48; }
-.panel-header h2 { font-size: 16px; color: #8ab4f8; }
-.panel-header .sub { font-size: 11px; color: #6b7280; margin-top: 4px; }
-.panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid #2a3a48;margin:0 12px}
+.tab{padding:8px 14px;font-size:12px;cursor:pointer;color:#9ca3af;border-bottom:2px solid transparent;white-space:nowrap}
+.tab:hover{color:#e0e0e0}
+.tab.active{color:#8ab4f8;border-bottom-color:#8ab4f8}
+.tab-content{display:none;padding:12px}
+.tab-content.active{display:block}
 
-#detail { display: none; }
-#detail.show { display: block; }
-.detail-card { background: #1e2d3d; border-radius: 10px; border: 1px solid #2a3a48; overflow: hidden; margin-bottom: 8px; }
-.detail-card .head { padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
-.detail-card .head .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-.detail-card .head .title { font-size: 14px; font-weight: 600; word-break: break-all; }
-.detail-card .meta { padding: 0 14px 12px; font-size: 12px; color: #9ca3af; line-height: 1.6; }
-.detail-card .section { padding: 10px 14px; border-top: 1px solid #2a3a48; }
-.detail-card .section h4 { font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; letter-spacing: 0.5px; }
-.detail-card .section .rel-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; margin: 2px 0; font-size: 12px; cursor: pointer; border-radius: 4px; }
-.detail-card .section .rel-item:hover { background: #2a3a58; }
-.detail-card .section .rel-item .rdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.detail-card .dag-box { font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; padding: 10px; background: #0f1923; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; color: #8ab4f8; max-height: 200px; overflow-y: auto; }
-.chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 500; margin: 1px 2px; }
-.chip.HazardType { background: #dc262633; color: #f87171; }
-.chip.Rule { background: #8b5cf633; color: #a78bfa; }
-.chip.DataSource { background: #10b98133; color: #34d399; }
+/* Cards */
+#detail{display:none}
+#detail.show{display:block}
+.detail-card{background:#1e2d3d;border-radius:10px;border:1px solid #2a3a48;overflow:hidden;margin-bottom:8px}
+.detail-card .head{padding:12px 14px;display:flex;align-items:center;gap:10px}
+.detail-card .head .dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.detail-card .head .title{font-size:14px;font-weight:600;word-break:break-all}
+.detail-card .meta{padding:0 14px 12px;font-size:12px;color:#9ca3af;line-height:1.6}
+.detail-card .section{padding:10px 14px;border-top:1px solid #2a3a48}
+.detail-card .section h4{font-size:11px;text-transform:uppercase;color:#6b7280;margin-bottom:6px;letter-spacing:.5px}
+.detail-card .section .rel-item{display:flex;align-items:center;gap:6px;padding:5px 8px;margin:2px 0;font-size:12px;cursor:pointer;border-radius:4px}
+.detail-card .section .rel-item:hover{background:#2a3a58}
+.rel-item .rdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dag-box{font-family:'SF Mono','Consolas',monospace;font-size:11px;padding:10px;background:#0f1923;border-radius:6px;overflow-x:auto;white-space:pre-wrap;color:#8ab4f8;max-height:200px;overflow-y:auto}
 
-#searchBox { padding: 8px 12px; }
-#searchBox input { width: 100%; background: #162230; border: 1px solid #3a4a58; color: #e0e0e0; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
-#searchResults { max-height: 200px; overflow-y: auto; margin: 0 12px; }
-#searchResults .sr { font-size: 12px; padding: 7px 10px; cursor: pointer; border-radius: 4px; margin: 2px 0; }
-#searchResults .sr:hover { background: #1e3040; }
-#searchResults .sr .srid { color: #8ab4f8; font-weight: 500; }
+/* Tags */
+.chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:500;margin:1px 2px}
+.chip.causal{background:#10b98133;color:#34d399}
+.chip.concurrent{background:#f59e0b33;color:#fbbf24}
+.chip.derived{background:#6b728033;color:#9ca3af}
+.chip.HazardType{background:#dc262633;color:#f87171}
+.chip.Rule{background:#8b5cf633;color:#a78bfa}
+.chip.DataSource{background:#10b98133;color:#34d399}
+.role-badge{font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px}
+.role-badge.causal{background:#10b981;color:#fff}
+.role-badge.concurrent{background:#f59e0b;color:#000}
+.role-badge.derived_gate{background:#6b7280;color:#fff}
 
-#graph-wrap { flex: 1; position: relative; }
-#graph { width: 100%; height: 100%; }
-.gtoolbar { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex; gap: 5px; }
-.gtoolbar button { background: #1e2d3d; border: 1px solid #3a4a58; color: #c0c0c0; padding: 5px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
-.gtoolbar button:hover { background: #2a3a58; color: #fff; }
-#status { position: absolute; bottom: 0; left: 0; right: 0; height: 28px; background: #1a2530; display: flex; align-items: center; padding: 0 12px; font-size: 11px; color: #6b7280; justify-content: space-between; }
+/* Forms */
+input,select,button{background:#162230;border:1px solid #3a4a58;color:#e0e0e0;padding:7px 10px;border-radius:6px;font-size:13px}
+button{background:#2563eb;border-color:#2563eb;cursor:pointer;font-weight:500}
+button:hover{background:#1d4ed8}
+button.sm{padding:4px 8px;font-size:11px}
+button.geo{background:#0891b2;border-color:#0891b2}
+button.time{background:#7c3aed;border-color:#7c3aed}
+.miniform{display:flex;gap:6px;padding:8px 0;align-items:center;flex-wrap:wrap}
+.miniform input,.miniform select{font-size:11px;padding:5px 7px;width:auto}
+.miniform input{width:80px}
+.miniform select{width:100px}
 
-.detect-bar { padding: 8px 12px; background: #162230; display: flex; gap: 6px; align-items: center; }
-.detect-bar input, .detect-bar select { background: #0f1923; border: 1px solid #3a4a58; color: #e0e0e0; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
-.detect-bar button { background: #2563eb; border: none; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
-#eventList { padding: 4px 12px 8px; max-height: 140px; overflow-y: auto; font-size: 11px; }
-.ev { padding: 5px 8px; margin: 3px 0; background: #162230; border-radius: 4px; border-left: 3px solid #3b82f6; }
+#searchBox{padding:8px 12px}
+#searchBox input{width:100%;font-size:13px}
+#searchResults{max-height:200px;overflow-y:auto;margin:0 12px}
+#searchResults .sr{font-size:12px;padding:7px 10px;cursor:pointer;border-radius:4px;margin:2px 0}
+#searchResults .sr:hover{background:#1e3040}
+.sr .srid{color:#8ab4f8;font-weight:500}
+
+#graph-wrap{flex:1;position:relative}
+#graph{width:100%;height:100%}
+.gtoolbar{position:absolute;top:10px;right:10px;z-index:10;display:flex;gap:5px}
+.gtoolbar button{background:#1e2d3d;border:1px solid #3a4a58;color:#c0c0c0;padding:5px 10px;border-radius:4px;font-size:11px;cursor:pointer}
+.gtoolbar button:hover{background:#2a3a58;color:#fff}
+#status{position:absolute;bottom:0;left:0;right:0;height:28px;background:#1a2530;display:flex;align-items:center;padding:0 12px;font-size:11px;color:#6b7280;justify-content:space-between}
+
+.prov-chain{font-size:11px;line-height:1.8;padding:6px 0}
+.prov-chain span.node{color:#8ab4f8}
+.prov-chain span.arrow{color:#6b7280;margin:0 4px}
+.prov-chain span.activity{color:#f59e0b;font-style:italic}
+.prov-chain span.source{color:#10b981}
+
+.event-timeline{font-size:11px}
+.event-timeline .ev-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #1e2d3d}
+.event-timeline .ev-date{color:#6b7280;width:80px}
+.event-timeline .ev-sev{font-weight:600;width:70px}
+.event-timeline .ev-type{color:#8ab4f8}
 </style>
 </head>
 <body>
@@ -59,65 +93,90 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div id="panel">
   <div class="panel-header">
     <h2>MAZU · DMDO-OWL 知识图谱</h2>
-    <div class="sub">W3C 标准 · SPARQL 查询 · 7784 三元组</div>
-    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
-      <span class="chip HazardType">4 灾害类型</span>
-      <span class="chip Rule">4 检测规则</span>
-      <span class="chip DataSource">6 数据源</span>
-    </div>
+    <div class="sub">W3C 标准 · 7801 三元组 · SOSA/GeoSPARQL/OWL-Time/PROV-O</div>
   </div>
 
-  <div id="searchBox"><input type="text" id="searchInput" placeholder="SPARQL 搜索指标..." oninput="doSearch()"></div>
+  <div id="searchBox"><input type="text" id="searchInput" placeholder="搜索指标 / 数据源..." oninput="doSearch()"></div>
   <div id="searchResults"></div>
 
   <div style="font-size:11px;color:#6b7280;padding:4px 14px;display:flex;gap:16px;">
-    <span>节点: <b id="nc">-</b></span><span>边: <b id="ec">-</b></span><span>三元组: <b id="tc">-</b></span>
+    <span>节点:<b id="nc">-</b></span><span>边:<b id="ec">-</b></span><span>三元组:<b id="tc">-</b></span>
   </div>
 
-  <div class="panel-body" id="emptyHint" style="color:#6b7280;font-size:13px;text-align:center;padding-top:40px;">
-    点击图中节点<br>查看 SPARQL 查询结果
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('detail')">节点详情</div>
+    <div class="tab" onclick="switchTab('spatial')">空间搜索</div>
+    <div class="tab" onclick="switchTab('temporal')">时间链</div>
+    <div class="tab" onclick="switchTab('detect')">事件检测</div>
   </div>
 
-  <div class="panel-body" id="detail"></div>
+  <!-- Tab: Node Detail -->
+  <div class="tab-content active" id="tab-detail">
+    <div id="emptyHint" style="color:#6b7280;font-size:13px;text-align:center;padding-top:40px;">点击图中节点<br>查看 DMDO-OWL 详情</div>
+    <div id="detail"></div>
+  </div>
 
-  <!-- SOSA Observation Panel -->
-  <div style="padding:8px 12px 4px;font-size:12px;color:#8ab4f8;display:flex;align-items:center;gap:8px;">
-    <span>SOSA 观测查询</span>
-    <span style="font-size:10px;color:#6b7280;">阈值过滤 · 空间定位</span>
+  <!-- Tab: GeoSPARQL Spatial -->
+  <div class="tab-content" id="tab-spatial">
+    <h4 style="font-size:12px;color:#8ab4f8;margin-bottom:8px;">GeoSPARQL 空间查询</h4>
+    <div class="miniform">
+      <input id="gsInd" value="tmax_c" placeholder="指标" style="width:100px">
+      <input id="gsLat" value="24.7" placeholder="纬度" style="width:60px">
+      <input id="gsLon" value="46.7" placeholder="经度" style="width:60px">
+      <input id="gsRad" value="100" placeholder="半径km" style="width:60px">
+    </div>
+    <div class="miniform">
+      <input id="gsDate" placeholder="日期(可选)" style="width:90px">
+      <input id="gsMin" placeholder="最小值(可选)" style="width:70px">
+      <button class="geo sm" onclick="geoRadius()">半径搜索</button>
+      <button class="geo sm" onclick="geoIntersect()">区域相交</button>
+    </div>
+    <div class="miniform">
+      <select id="gsRegion" style="width:120px">
+        <option value="red_sea">红海</option><option value="persian_gulf">波斯湾</option>
+        <option value="north_saudi">北部</option><option value="central_saudi">中部</option><option value="south_saudi">南部</option>
+      </select>
+      <button class="geo sm" onclick="geoAggregate()">区域聚合</button>
+    </div>
+    <div id="gsResults" style="font-size:11px;margin-top:6px;max-height:200px;overflow-y:auto"></div>
   </div>
-  <div style="padding:0 12px 6px;display:flex;gap:5px;flex-wrap:wrap;">
-    <input type="text" id="obsDate" value="2025-08-19" style="width:90px;font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;" placeholder="日期">
-    <select id="obsIndicator" style="font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;">
-      <option value="tmax_c">tmax_c</option>
-      <option value="daily_precip_total">daily_precip_total</option>
-      <option value="cape">cape</option>
-      <option value="t2m_c">t2m_c</option>
-      <option value="heat_index_c">heat_index_c</option>
-      <option value="wind10_speed">wind10_speed</option>
-      <option value="rh2m">rh2m</option>
-      <option value="sst_celsius">sst_celsius</option>
-      <option value="pwat">pwat</option>
-      <option value="ivt">ivt</option>
-      <option value="ds10_max_1h">ds10_max_1h</option>
-    </select>
-    <select id="obsOp" style="font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;">
-      <option value=">=">>=</option>
-      <option value=">">></option>
-      <option value="<="><=</option>
-      <option value="<"><</option>
-    </select>
-    <input type="text" id="obsThresh" value="45" style="width:50px;font-size:11px;padding:5px;background:#162230;border:1px solid #3a4a58;color:#e0e0e0;border-radius:4px;">
-    <button onclick="queryObservations()" style="background:#0891b2;border:none;color:#fff;padding:5px 10px;border-radius:4px;font-size:11px;cursor:pointer;">查询</button>
-    <button onclick="createObservations()" style="background:#374151;border:none;color:#c0c0c0;padding:5px 8px;border-radius:4px;font-size:10px;cursor:pointer;">+创建</button>
-  </div>
-  <div id="obsResults" style="padding:0 12px 4px;max-height:120px;overflow-y:auto;font-size:10px;"></div>
 
-  <div class="detect-bar">
-    <input type="text" id="evDate" value="2025-08-19" style="width:90px;">
-    <select id="evHazard"><option value="">全部</option><option value="flash_flood">山洪</option><option value="extreme_heat">高温</option><option value="dust_storm">沙尘</option><option value="coastal_humid_heat">沿海</option></select>
-    <button onclick="runDetect()">检测</button>
+  <!-- Tab: OWL-Time Temporal -->
+  <div class="tab-content" id="tab-temporal">
+    <h4 style="font-size:12px;color:#8ab4f8;margin-bottom:8px;">OWL-Time 级联事件链</h4>
+    <div class="miniform">
+      <select id="tmHazard" style="width:100px">
+        <option value="">全部灾种</option><option value="flash_flood">山洪</option>
+        <option value="extreme_heat">高温</option><option value="dust_storm">沙尘</option>
+      </select>
+      <button class="time sm" onclick="timeSequence()">级联链条</button>
+      <button class="time sm" onclick="timeTimeline()">时间线</button>
+    </div>
+    <div id="tmResults" style="font-size:11px;margin-top:6px;max-height:250px;overflow-y:auto"></div>
   </div>
-  <div id="eventList"></div>
+
+  <!-- Tab: Event Detection -->
+  <div class="tab-content" id="tab-detect">
+    <div class="miniform">
+      <input type="text" id="evDate" value="2025-08-19" style="width:90px">
+      <select id="evHazard"><option value="">全部</option><option value="flash_flood">山洪</option><option value="extreme_heat">高温</option><option value="dust_storm">沙尘</option><option value="coastal_humid_heat">沿海</option></select>
+      <button onclick="runDetect()">检测</button>
+    </div>
+    <div class="miniform">
+      <input id="obsDate2" value="2025-08-19" style="width:90px" placeholder="日期">
+      <select id="obsIndicator2" style="width:100px">
+        <option value="tmax_c">tmax_c</option><option value="daily_precip_total">daily_precip_total</option>
+        <option value="cape">cape</option><option value="heat_index_c">heat_index_c</option>
+        <option value="wind10_speed">wind10_speed</option>
+      </select>
+      <select id="obsOp2" style="width:60px"><option value=">=">>=</option><option value=">">></option></select>
+      <input id="obsThresh2" value="45" style="width:50px">
+      <button class="sm" onclick="createObservations()">+创建观测</button>
+    </div>
+    <div id="eventList" style="font-size:11px;margin-top:6px;max-height:150px;overflow-y:auto"></div>
+    <div id="obsMiniResult" style="font-size:10px;margin-top:4px;color:#10b981"></div>
+  </div>
 </div>
 
 <div id="graph-wrap">
@@ -127,247 +186,173 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <button onclick="showAll()">全部</button>
     <button onclick="focusByType('HazardType')">灾害</button>
     <button onclick="focusByType('DataSource')">数据源</button>
+    <button onclick="focusByType('Rule')">规则</button>
   </div>
-  <div id="status"><span>就绪 · 点击节点 SPARQL 查询</span><span style="color:#10b981;">DMDO-OWL</span></div>
+  <div id="status"><span>就绪 · 点击节点查看 DMDO-OWL 详情</span><span style="color:#10b981;">SOSA · GeoSPARQL · OWL-Time · PROV-O</span></div>
 </div>
 
 <script>
 let network, allNodes=[], allEdges=[];
-const TYPE_COLOR = { Indicator:"#3b82f6", DataSource:"#10b981", HazardType:"#ef4444", Region:"#f59e0b", Rule:"#8b5cf6", Event:"#f472b6" };
+const TC={Indicator:"#3b82f6",DataSource:"#10b981",HazardType:"#ef4444",Region:"#f59e0b",Rule:"#8b5cf6",Event:"#f472b6"};
 
-async function init() {
-  setStatus("SPARQL 查询图谱...");
-  const r = await fetch("/api/sparql/summary");
-  const d = await r.json();
-  allNodes = d.nodes; allEdges = d.edges;
-  document.getElementById("nc").textContent = d.total_nodes;
-  document.getElementById("ec").textContent = d.total_edges;
-  document.getElementById("tc").textContent = d.triples;
-  draw(allNodes, allEdges);
-  setStatus(`SPARQL 就绪 · ${d.triples} 三元组 · ${d.total_nodes} 节点`);
+async function init(){
+  setStatus("加载图谱...");
+  const r=await fetch("/api/sparql/summary"),d=await r.json();
+  allNodes=d.nodes;allEdges=d.edges;
+  document.getElementById("nc").textContent=d.total_nodes;
+  document.getElementById("ec").textContent=d.total_edges;
+  document.getElementById("tc").textContent=d.triples;
+  draw(allNodes,allEdges);
 }
 
-function draw(nodes, edges) {
-  const nodeArr = nodes.map(n => ({
-    id: n.id, label: n.id.length>28 ? n.id.slice(0,28)+"…" : n.id,
-    group: n.type, title: n.title||n.id,
-    color: { background: TYPE_COLOR[n.type]||"#6b7280", border: "#0000" },
-    font: { size: 9, color: "#c0c0c0" },
-    shape: n.type==="HazardType"?"triangle":n.type==="Rule"?"diamond":n.type==="DataSource"?"square":"dot",
-    size: n.type==="HazardType"?20:n.type==="DataSource"?14:n.type==="Rule"?12:7,
-  }));
-  const edgeArr = edges.map(e => ({
-    from: e.from, to: e.to, label: e.label,
-    color: { color: e.label==="derived_from"?"#3b82f6":e.label==="co_occurs_with"?"#8b5cf6":e.label==="causes"?"#ef4444":"#6b7280" },
-    font: { size: 8 }, arrows: e.arrows||"to", width: e.label==="derived_from"?2:1,
-  }));
-  network = new vis.Network(document.getElementById("graph"),
-    { nodes: new vis.DataSet(nodeArr), edges: new vis.DataSet(edgeArr) },
-    { physics: { solver:"forceAtlas2Based", forceAtlas2Based:{ gravitationalConstant:-55, springLength:130 } },
-      interaction: { hover:true }, groups: {
-        Indicator: { color:{background:"#3b82f6",border:"#3b82f6"} },
-        DataSource: { color:{background:"#10b981",border:"#10b981"} },
-        HazardType: { color:{background:"#ef4444",border:"#ef4444"} },
-        Region: { color:{background:"#f59e0b",border:"#f59e0b"} },
-        Rule: { color:{background:"#8b5cf6",border:"#8b5cf6"} },
-      }}
-  );
-  network.on("click", p => { if(p.nodes.length) showDetail(p.nodes[0]); });
-  network.on("doubleClick", p => { if(p.nodes.length) network.focus(p.nodes[0],{scale:1.8,animation:true}); });
+function draw(nodes,edges){
+  const na=nodes.map(n=>({id:n.id,label:n.id.length>28?n.id.slice(0,28)+"…":n.id,group:n.type,title:n.title||n.id,color:{background:TC[n.type]||"#6b7280",border:"#0000"},font:{size:9,color:"#c0c0c0"},shape:n.type==="HazardType"?"triangle":n.type==="Rule"?"diamond":n.type==="DataSource"?"square":"dot",size:n.type==="HazardType"?20:n.type==="DataSource"?14:n.type==="Rule"?12:7}));
+  const ea=edges.map(e=>({from:e.from,to:e.to,label:e.label,color:{color:e.label==="derived_from"?"#3b82f6":e.label==="co_occurs_with"?"#8b5cf6":e.label==="causes"?"#ef4444":"#6b7280"},font:{size:8},arrows:e.arrows||"to",width:e.label==="derived_from"?2:1}));
+  network=new vis.Network(document.getElementById("graph"),{nodes:new vis.DataSet(na),edges:new vis.DataSet(ea)},{physics:{solver:"forceAtlas2Based",forceAtlas2Based:{gravitationalConstant:-55,springLength:130}},interaction:{hover:true},groups:{Indicator:{color:{background:"#3b82f6",border:"#3b82f6"}},DataSource:{color:{background:"#10b981",border:"#10b981"}},HazardType:{color:{background:"#ef4444",border:"#ef4444"}},Region:{color:{background:"#f59e0b",border:"#f59e0b"}},Rule:{color:{background:"#8b5cf6",border:"#8b5cf6"}}}});
+  network.on("click",p=>{if(p.nodes.length)showDetail(p.nodes[0])});
+  network.on("doubleClick",p=>{if(p.nodes.length)network.focus(p.nodes[0],{scale:1.8,animation:true})});
+}
+function fitGraph(){network&&network.fit({animation:true})}
+function showAll(){draw(allNodes,allEdges)}
+function focusByType(t){const ids=allNodes.filter(n=>n.type===t).map(n=>n.id),re=allEdges.filter(e=>ids.includes(e.from)||ids.includes(e.to)),rn=allNodes.filter(n=>ids.includes(n.id)||re.some(e=>e.from===n.id||e.to===n.id));draw(rn,re)}
+
+// ── Tabs ──
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelector(`.tab:nth-child(${['detail','spatial','temporal','detect'].indexOf(name)+1})`).classList.add('active');
+  document.getElementById(`tab-${name}`).classList.add('active');
 }
 
-function fitGraph() { network && network.fit({animation:true}); }
-function showAll() { draw(allNodes, allEdges); }
-function focusByType(t) {
-  const ids = allNodes.filter(n=>n.type===t).map(n=>n.id);
-  const re = allEdges.filter(e=>ids.includes(e.from)||ids.includes(e.to));
-  const rn = allNodes.filter(n=>ids.includes(n.id)||re.some(e=>e.from===n.id||e.to===n.id));
-  draw(rn, re);
-}
+// ── Detail (DMDO-OWL full stack) ──
+async function showDetail(nodeId){
+  const node=allNodes.find(n=>n.id===nodeId);if(!node)return;
+  network&&network.focus(nodeId,{scale:1.5,animation:true});
+  setStatus(`KG: ${nodeId} (${node.type})`);
+  switchTab('detail');
 
-// ── SPARQL-powered detail ──
-async function showDetail(nodeId) {
-  const node = allNodes.find(n=>n.id===nodeId);
-  if (!node) return;
-  network && network.focus(nodeId, {scale:1.5,animation:true});
-  setStatus(`SPARQL: ${nodeId} (${node.type})`);
+  let html=`<div class="detail-card">`;
+  const c=TC[node.type]||"#6b7280";
+  html+=`<div class="head"><div class="dot" style="background:${c}"></div><div class="title">${nodeId}</div></div>`;
+  html+=`<div class="meta">DMDO/${node.type}`;
 
-  let html = `<div class="detail-card">`;
-  const c = TYPE_COLOR[node.type]||"#6b7280";
-  html += `<div class="head"><div class="dot" style="background:${c}"></div><div class="title">${nodeId}</div></div>`;
-  html += `<div class="meta">类型: DMDO/${node.type}</div>`;
-
-  if (node.type === "Indicator") {
-    try {
-      const r = await fetch(`/api/sparql/indicator/${nodeId}`);
-      const d = await r.json();
-      const dt = d.detail || {};
-      if (dt.description) html += `<div class="meta">${dt.description}</div>`;
-      if (dt.expression) html += `<div class="section"><h4>计算公式</h4><div class="dag-box">${dt.expression}</div></div>`;
-      if (dt.dag) html += `<div class="section"><h4>DAG (可执行)</h4><div class="dag-box">${dt.dag}</div></div>`;
-      if (d.co_occurring && d.co_occurring.length>0) {
-        html += `<div class="section"><h4>联合解释 (${d.co_occurring.length})</h4>`;
-        d.co_occurring.forEach(c => { html += `<div class="rel-item" onclick="showDetail('${c}')"><span class="rdot" style="background:#8b5cf6"></span>${c}</div>`; });
-        html += `</div>`;
-      }
-      if (d.chain && d.chain.length>0) {
-        html += `<div class="section"><h4>推导链</h4>`;
-        d.chain.forEach(c => {
-          const cn = typeof c==="string" ? c.split("/").pop().replace(">","") : c;
-          html += `<div class="rel-item" onclick="showDetail('${cn}')"><span class="rdot" style="background:#3b82f6"></span>${cn}</div>`;
+  if(node.type==="Indicator"){
+    const r=await fetch(`/api/sparql/indicator/${nodeId}`),d=await r.json(),dt=d.detail||{},op=dt;
+    html+=` | 单位:${op.output_unit||"N/A"} | 来源:${op.source||"N/A"}</div>`;
+    if(op.description)html+=`<div class="meta">${op.description}</div>`;
+    if(op.expression)html+=`<div class="section"><h4>计算公式</h4><div class="dag-box">${op.expression}</div></div>`;
+    if(op.dag)html+=`<div class="section"><h4>DAG (可执行)</h4><div class="dag-box">${JSON.stringify(op.dag,null,2)}</div></div>`;
+    // PROV-O chain
+    try{
+      const pr=await fetch(`/api/sparql/provenance/indicator/${nodeId}`),pd=await pr.json();
+      if(pd.length>0){
+        html+=`<div class="section"><h4>PROV-O 溯源链 (${pd.length} 步)</h4><div class="prov-chain">`;
+        pd.forEach(p=>{
+          if(p.derivedFrom)html+=`<span class="node">${nodeId}</span> <span class="arrow">←wasDerivedFrom←</span> <span class="node">${(p.derivedFrom||'').split('/').pop().replace('>','')}</span><br>`;
+          if(p.activity)html+=`<span class="activity">⚙ ${(p.activity||'').split('/').pop().replace('>','')}</span><br>`;
+          if(p.source)html+=`<span class="source">📡 数据源: ${(p.source||'').split('/').pop().replace('>','')}</span><br>`;
         });
-        html += `</div>`;
+        html+=`</div></div>`;
       }
-    } catch(e) {}
-  } else if (node.type === "HazardType") {
-    try {
-      const r = await fetch(`/api/sparql/hazard/${nodeId}`);
-      const d = await r.json();
-      if (d.indicators && d.indicators.length>0) {
-        html += `<div class="section"><h4>关联指标 (${d.indicators.length})</h4>`;
-        d.indicators.forEach(ind => {
-          html += `<div class="rel-item" onclick="showDetail('${ind.id}')"><span class="rdot" style="background:#3b82f6"></span>${ind.id}</div>`;
+    }catch(e){}
+    // SOSA Sensor
+    try{
+      const sr=await fetch(`/api/sparql/provenance/indicator/${nodeId}`),sd=await sr.json();
+      const sources=sd.filter(p=>p.source).map(p=>(p.source||'').split('/').pop().replace('>',''));
+      if(sources.length>0)html+=`<div class="meta" style="color:#10b981;">SOSA 传感器来源: ${[...new Set(sources)].join(', ')}</div>`;
+    }catch(e){}
+  }else if(node.type==="Rule"){
+    html+=`</div>`;
+    try{
+      const r=await fetch(`/api/sparql/rule/${nodeId}`),d=await r.json();
+      if(d.hazard_type)html+=`<div class="meta">检测灾种: <span class="chip HazardType">${d.hazard_type}</span></div>`;
+      if(d.conditions&&d.conditions.length>0){
+        html+=`<div class="section"><h4>检测条件 · 因果角色标签</h4>`;
+        d.conditions.forEach(c=>{
+          const role=c.role||(c.isPrimary==="true"?"derived_gate":"concurrent");
+          const roleCN={causal:"因果(提前量)",concurrent:"并发(实况)",derived_gate:"门控(衍生)"}[role]||role;
+          const prim=c.isPrimary==="true"?' 🔑':''; const indName=(c.indicator||'').split('/').pop()||'?';
+          html+=`<div class="rel-item" onclick="showDetail('${indName}')"><span class="rdot" style="background:${role==='causal'?'#10b981':role==='derived_gate'?'#6b7280':'#f59e0b'}"></span>${indName} ${c.comparisonOp||c.condition||'>='} ${c.threshold||'?'}<span class="role-badge ${role}">${roleCN}${prim}</span><span style="color:#6b7280;margin-left:4px">w=${c.weight}</span></div>`;
         });
-        html += `</div>`;
+        html+=`</div>`;
       }
-    } catch(e) {}
-  } else if (node.type === "DataSource") {
-    html += `<div class="section"><h4>prov:Entity (数据源)</h4></div>`;
-    const outEdges = allEdges.filter(e=>e.from===nodeId);
-    if (outEdges.length>0) {
-      html += `<div class="section"><h4>下游指标 (${outEdges.length})</h4>`;
-      outEdges.forEach(e => { html += `<div class="rel-item" onclick="showDetail('${e.to}')"><span class="rdot" style="background:#3b82f6"></span>${e.to}</div>`; });
-      html += `</div>`;
-    }
-  } else if (node.type === "Rule") {
-    try {
-      const r = await fetch(`/api/sparql/rule/${nodeId}`);
-      const d = await r.json();
-      if (d.hazard_type) html += `<div class="meta">检测灾种: <span class="chip HazardType">${d.hazard_type}</span></div>`;
-      if (d.conditions && d.conditions.length>0) {
-        html += `<div class="section"><h4>检测条件 (${d.conditions.length} 个)</h4>`;
-        d.conditions.forEach(c => {
-          const prim = c.isPrimary === "true" ? " 🔑主条件" : "";
-          html += `<div class="rel-item" onclick="showDetail('${c.indicator||c.threshold}')">
-            <span class="rdot" style="background:${c.isPrimary==='true'?'#ef4444':'#3b82f6'}"></span>
-            ${c.indicator||'?'} ${c.comparisonOp||c.condition||'>='} ${c.threshold||'?'}
-            <span style="color:#6b7280;">(权重 ${c.weight})${prim}</span>
-          </div>`;
-        });
-        html += `</div>`;
+    }catch(e){}
+  }else if(node.type==="HazardType"){
+    html+=`</div>`;
+    try{
+      const r=await fetch(`/api/sparql/hazard/${nodeId}`),d=await r.json();
+      if(d.indicators&&d.indicators.length>0){
+        html+=`<div class="section"><h4>关联指标 (${d.indicators.length})</h4>`;
+        d.indicators.forEach(ind=>{html+=`<div class="rel-item" onclick="showDetail('${ind.id}')"><span class="rdot" style="background:#3b82f6"></span>${ind.id}</div>`});
+        html+=`</div>`;
       }
-      if (d.severity_levels && d.severity_levels.length>0) {
-        html += `<div class="section"><h4>严重度分级</h4>`;
-        d.severity_levels.forEach(s => {
-          html += `<div style="font-size:11px;padding:2px 0;">[${s.lowerBound}-${s.upperBound}] <b>${s.severityLabel}</b></div>`;
-        });
-        html += `</div>`;
-      }
-      if (d.fallback) {
-        html += `<div class="section"><h4>Fallback 降级策略</h4>`;
-        html += `<div class="meta">缺失指标: ${d.fallback.missingIndicator||'?'} → ${d.fallback.strategy||'?'} (置信度 ${d.fallback.confidencePenalty||'?'})</div>`;
-        html += `</div>`;
-      }
-    } catch(e) {}
-  } else if (node.type === "Event") {
-    html += `<div class="section"><h4>deo:Disaster (灾害事件)</h4></div>`;
+    }catch(e){}
   }
-
   // In/out edges
-  const inE = allEdges.filter(e=>e.to===nodeId);
-  const outE = allEdges.filter(e=>e.from===nodeId);
-  if (inE.length>0) {
-    html += `<div class="section"><h4>入边 (${inE.length})</h4>`;
-    inE.slice(0,20).forEach(e => { html += `<div class="rel-item" onclick="showDetail('${e.from}')"><span class="rdot" style="background:${TYPE_COLOR[allNodes.find(n=>n.id===e.from)?.type]||'#6b7280'}"></span>${e.from} ← ${e.label}</div>`; });
-    html += `</div>`;
-  }
-  if (outE.length>0) {
-    html += `<div class="section"><h4>出边 (${outE.length})</h4>`;
-    outE.slice(0,20).forEach(e => { html += `<div class="rel-item" onclick="showDetail('${e.to}')"><span class="rdot" style="background:${TYPE_COLOR[allNodes.find(n=>n.id===e.to)?.type]||'#6b7280'}"></span>${e.label} → ${e.to}</div>`; });
-    html += `</div>`;
-  }
-
-  html += `</div>`;
-  document.getElementById("detail").innerHTML = html;
-  document.getElementById("detail").classList.add("show");
-  document.getElementById("emptyHint").style.display = "none";
+  const inE=allEdges.filter(e=>e.to===nodeId),outE=allEdges.filter(e=>e.from===nodeId);
+  if(inE.length>0){html+=`<div class="section"><h4>入边 (${inE.length})</h4>`;inE.slice(0,15).forEach(e=>{html+=`<div class="rel-item" onclick="showDetail('${e.from}')"><span class="rdot" style="background:${TC[allNodes.find(n=>n.id===e.from)?.type]||'#6b7280'}"></span>${e.from} ← ${e.label}</div>`});html+=`</div>`}
+  if(outE.length>0){html+=`<div class="section"><h4>出边 (${outE.length})</h4>`;outE.slice(0,15).forEach(e=>{html+=`<div class="rel-item" onclick="showDetail('${e.to}')"><span class="rdot" style="background:${TC[allNodes.find(n=>n.id===e.to)?.type]||'#6b7280'}"></span>${e.label} → ${e.to}</div>`});html+=`</div>`}
+  html+=`</div>`;
+  document.getElementById("detail").innerHTML=html;document.getElementById("detail").classList.add("show");
+  document.getElementById("emptyHint").style.display="none";
 }
 
-// ── Search (SPARQL) ──
-let st;
-function doSearch() {
-  clearTimeout(st);
-  st = setTimeout(async () => {
-    const q = document.getElementById("searchInput").value.trim();
-    if (!q) { document.getElementById("searchResults").innerHTML=""; return; }
-    const r = await fetch(`/api/sparql/search?q=${encodeURIComponent(q)}`);
-    const items = await r.json();
-    document.getElementById("searchResults").innerHTML = items.map(i =>
-      `<div class="sr" onclick="showDetail('${i.id}')"><span class="srid">${i.id}</span><br><span style="color:#9ca3af;">${(i.description||"").slice(0,50)}</span></div>`
-    ).join("") || `<div class="sr" style="color:#6b7280;">无结果</div>`;
-  }, 250);
+// ── Search ──
+let st;function doSearch(){clearTimeout(st);st=setTimeout(async()=>{const q=document.getElementById("searchInput").value.trim();if(!q){document.getElementById("searchResults").innerHTML="";return}const r=await fetch(`/api/sparql/search?q=${encodeURIComponent(q)}`),items=await r.json();document.getElementById("searchResults").innerHTML=items.map(i=>`<div class="sr" onclick="showDetail('${i.id}')"><span class="srid">${i.id}</span><br><span style="color:#9ca3af;">${(i.description||"").slice(0,50)}</span></div>`).join("")||'<div class="sr" style="color:#6b7280;">无结果</div>'},250)}
+
+// ── GeoSPARQL ──
+async function geoRadius(){
+  const p=new URLSearchParams({indicator:document.getElementById("gsInd").value,lat:document.getElementById("gsLat").value,lon:document.getElementById("gsLon").value,radius:document.getElementById("gsRad").value});
+  const dt=document.getElementById("gsDate").value,mv=document.getElementById("gsMin").value;
+  if(dt)p.append("date",dt);if(mv)p.append("min_value",mv);
+  setStatus(`GeoSPARQL: geof:distance radius search...`);
+  const r=await fetch(`/api/sparql/geospatial/radius?${p}`),d=await r.json();
+  document.getElementById("gsResults").innerHTML=d.length?d.slice(0,15).map(o=>`<div style="padding:2px 0;color:#e0e0e0;">📍 (${parseFloat(o.lat).toFixed(1)}°N, ${parseFloat(o.lon).toFixed(1)}°E) = <b style="color:#8ab4f8;">${parseFloat(o.val||o.value).toFixed(2)}</b></div>`).join("")+`<div style="color:#6b7280;">共 ${d.length} 条</div>`:'<div style="color:#6b7280;">无结果</div>';
+}
+async function geoIntersect(){
+  const reg=document.getElementById("gsRegion").value;
+  setStatus(`GeoSPARQL: sfIntersects ${reg}...`);
+  const r=await fetch(`/api/sparql/geospatial/intersects?region=${reg}`),d=await r.json();
+  document.getElementById("gsResults").innerHTML=d.length?d.slice(0,10).map(e=>`<div>📌 ${(e.event||'').split('/').pop().replace('>','')} | ${(e.hazardType||'').split('/').pop().replace('>','')} | severity:${e.severity||'?'}</div>`).join("")+`<div style="color:#6b7280;">共 ${d.length} 个事件</div>`:'<div style="color:#6b7280;">该区域无事件</div>';
+}
+async function geoAggregate(){
+  const reg=document.getElementById("gsRegion").value,ind=document.getElementById("gsInd").value,date=document.getElementById("gsDate").value||"2025-08-19";
+  setStatus(`GeoSPARQL: 空间聚合 ${ind} @ ${date}...`);
+  const r=await fetch(`/api/sparql/geospatial/aggregate?indicator=${ind}&date=${date}&region=${reg}`),d=await r.json();
+  const o=d[0]||{};
+  document.getElementById("gsResults").innerHTML=`<div style="padding:8px;background:#0f1923;border-radius:6px;">${date} · ${reg} · ${ind}<br>观测数: <b>${o.count||0}</b> · 最大值: <b>${parseFloat(o.maxVal||0).toFixed(2)}</b> · 均值: <b>${parseFloat(o.avgVal||0).toFixed(2)}</b></div>`;
 }
 
-// ── SOSA Observations ──
-async function queryObservations() {
-  const date = document.getElementById("obsDate").value;
-  const ind = document.getElementById("obsIndicator").value;
-  const op = document.getElementById("obsOp").value;
-  const thresh = document.getElementById("obsThresh").value || "0";
-  setStatus(`SPARQL: ${ind} ${op} ${thresh} @ ${date}`);
-
-  const params = new URLSearchParams({ indicator: ind, date, min_value: op.startsWith(">") ? thresh : thresh });
-  const r = await fetch(`/api/sparql/observations/query?${params}`);
-  const results = await r.json();
-
-  if (!results.length) {
-    document.getElementById("obsResults").innerHTML = `<div style="color:#6b7280;padding:4px;">无匹配观测</div>`;
-  } else {
-    const maxShow = 10;
-    const lines = results.slice(0, maxShow).map(o =>
-      `<div style="padding:2px 0;color:#e0e0e0;">📍 (${parseFloat(o.lat).toFixed(1)}°N, ${parseFloat(o.lon).toFixed(1)}°E) → <b style="color:#8ab4f8;">${parseFloat(o.value).toFixed(2)}</b></div>`
-    ).join("");
-    const more = results.length > maxShow ? `<div style="color:#6b7280;">... 共 ${results.length} 条观测</div>` : "";
-    document.getElementById("obsResults").innerHTML = lines + more;
-  }
-  setStatus(`SPARQL 观测: ${results.length} 条`);
+// ── OWL-Time ──
+async function timeSequence(){
+  const ht=document.getElementById("tmHazard").value;
+  setStatus("OWL-Time: 级联事件链...");
+  const r=await fetch(`/api/sparql/temporal/sequence?hazard_type=${ht||''}`),d=await r.json();
+  document.getElementById("tmResults").innerHTML=d.length?d.slice(0,20).map(e=>`<div class="ev-row"><span class="ev-date">${(e.event1||'').split('/').pop()}</span><span style="color:#8b5cf6;">${e.relation||''}</span>→<span class="ev-date">${(e.event2||'').split('/').pop()}</span></div>`).join("")+`<div style="color:#6b7280;">共 ${d.length} 条级联关系</div>`:'<div style="color:#6b7280;">无级联事件链（请先运行事件检测）</div>';
 }
-
-async function createObservations() {
-  const date = document.getElementById("obsDate").value;
-  const ind = document.getElementById("obsIndicator").value;
-  const op = document.getElementById("obsOp").value;
-  const thresh = parseFloat(document.getElementById("obsThresh").value) || 0;
-  setStatus(`创建 Observation: ${ind} @ ${date}...`);
-
-  const r = await fetch("/api/sparql/observations/create", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      date, indicator_ids: [ind],
-      threshold_filter: { [ind]: [op, thresh] }
-    })
-  });
-  const d = await r.json();
-  document.getElementById("obsResults").innerHTML = `<div style="color:#10b981;padding:4px;">✅ 已创建 ${d.observations_created} 条观测 · 图谱共 ${d.total_triples} 三元组</div>`;
-  setStatus(`已创建 ${d.observations_created} SOSA Observation`);
+async function timeTimeline(){
+  setStatus("OWL-Time: 事件时间线...");
+  const r=await fetch("/api/sparql/temporal/timeline"),d=await r.json();
+  document.getElementById("tmResults").innerHTML=d.length?d.slice(0,25).map(e=>`<div class="ev-row"><span class="ev-date">${e.date||'?'}</span><span class="ev-sev" style="color:${parseFloat(e.severity)>0.7?'#ef4444':'#f59e0b'}">${e.severity||'?'}</span><span class="ev-type">${(e.hazardType||'').split('/').pop().replace('>','')}</span></div>`).join("")+`<div style="color:#6b7280;">共 ${d.length} 个事件</div>`:'<div style="color:#6b7280;">无事件（请先运行事件检测）</div>';
 }
+function timeCascade(evId){}
 
 // ── Event detection ──
-async function runDetect() {
-  const date = document.getElementById("evDate").value;
-  const ht = document.getElementById("evHazard").value;
+async function runDetect(){
+  const date=document.getElementById("evDate").value,ht=document.getElementById("evHazard").value;
   setStatus(`检测 + 写入 RDF: ${date}...`);
-  const r = await fetch("/api/detect", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({date, hazard_type: ht||null}) });
-  const d = await r.json();
-  document.getElementById("eventList").innerHTML = d.events.length===0
-    ? `<div style="color:#6b7280;font-size:11px;">无极端事件</div>`
-    : d.events.map(e => `<div class="ev"><b>${e.severity.toUpperCase()}</b> ${e.hazard_type} · ${e.cells_count}格点 · ${e.area_km2.toFixed(0)}km² · ${e.region}</div>`).join("");
-  setStatus(`检测: ${d.events.length} 事件 · RDF: ${d.rdf_triples} 三元组`);
+  const r=await fetch("/api/detect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date,hazard_type:ht||null})}),d=await r.json();
+  document.getElementById("eventList").innerHTML=d.events.length===0?`<div style="color:#6b7280;">无极端事件</div>`:d.events.map(e=>`<div class="ev-row"><span class="ev-sev">${e.severity.toUpperCase()}</span><span class="chip HazardType">${e.hazard_type}</span>${e.cells_count}格点 · ${e.area_km2.toFixed(0)}km² · ${e.region}</div>`).join("");
+  setStatus(`检测: ${d.events.length} 事件 · RDF: ${d.rdf_triples} triples`);
+}
+async function createObservations(){
+  const date=document.getElementById("obsDate2").value,ind=document.getElementById("obsIndicator2").value,op=document.getElementById("obsOp2").value,th=parseFloat(document.getElementById("obsThresh2").value)||0;
+  setStatus(`SOSA Observation: ${ind} @ ${date}...`);
+  const r=await fetch("/api/sparql/observations/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date,indicator_ids:[ind],threshold_filter:{[ind]:[op,th]}})}),d=await r.json();
+  document.getElementById("obsMiniResult").innerHTML=`✅ ${d.observations_created} 条观测 · ${d.total_triples} triples`;
 }
 
-function setStatus(msg) { document.getElementById("status").innerHTML = `<span>${msg}</span><span style="color:#10b981;">DMDO-OWL</span>`; }
-
+function setStatus(msg){document.getElementById("status").innerHTML=`<span>${msg}</span><span style="color:#10b981;">DMDO-OWL</span>`}
 init();
 </script>
 </body>

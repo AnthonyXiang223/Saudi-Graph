@@ -292,6 +292,134 @@ def api_sparql_observation_stats():
 
 
 # ═══════════════════════════════════════════
+# SPARQL API — GeoSPARQL spatial queries (P1)
+# ═══════════════════════════════════════════
+
+@app.route("/api/sparql/geospatial/radius")
+def api_geospatial_radius():
+    """Spatial search: find observations within radius using Python-side filtering."""
+    import math
+    ind = request.args.get("indicator", "tmax_c")
+    lat = float(request.args.get("lat", 24.7))
+    lon = float(request.args.get("lon", 46.7))
+    radius_km = float(request.args.get("radius", 100))
+    date_str = request.args.get("date", None)
+    min_val = request.args.get("min_value", None)
+    if min_val:
+        min_val = float(min_val)
+
+    # Query observations from RDF (basic SPARQL, no GeoSPARQL extension)
+    from rdflib import URIRef, Literal
+    g = converter.graph
+    SAUDI_NS = "https://mazu.cma/saudi#"
+    ind_uri = URIRef(f"{SAUDI_NS}Indicator/{ind}")
+
+    results = []
+    for s, p, o in g.triples((None, SOSA.observedProperty, ind_uri)):
+        obs_node = s
+        val = None
+        obs_date = None
+        obs_lat = None
+        obs_lon = None
+        for _, pp, oo in g.triples((obs_node, None, None)):
+            if pp == SOSA.hasSimpleResult:
+                val = float(oo)
+            elif pp == SOSA.resultTime:
+                obs_date = str(oo)
+            elif pp == SOSA.hasFeatureOfInterest:
+                for _, gp, go in g.triples((oo, GEO_F.hasGeometry, None)):
+                    for _, gpp, gowkt in g.triples((go, GEO_F.asWKT, None)):
+                        wkt = str(gowkt)
+                        if wkt.startswith("POINT("):
+                            parts = wkt[6:-1].split()
+                            if len(parts) >= 2:
+                                try:
+                                    obs_lon = float(parts[0])
+                                    obs_lat = float(parts[1])
+                                except ValueError:
+                                    pass
+        if val is None or obs_lat is None:
+            continue
+        if date_str and obs_date and date_str not in obs_date:
+            continue
+        if min_val is not None and val <= min_val:
+            continue
+        # Haversine distance
+        dlat = math.radians(obs_lat - lat)
+        dlon = math.radians(obs_lon - lon)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat))*math.cos(math.radians(obs_lat))*math.sin(dlon/2)**2
+        dist = 2*6371*math.asin(math.sqrt(a))
+        if dist <= radius_km:
+            results.append({"lat": round(obs_lat,4), "lon": round(obs_lon,4), "value": round(val,2), "date": obs_date, "distance_km": round(dist,1)})
+    results.sort(key=lambda r: r.get("distance_km", 999))
+    return jsonify(results[:100])
+
+
+@app.route("/api/sparql/geospatial/intersects")
+def api_geospatial_intersects():
+    """GeoSPARQL: find events intersecting a region."""
+    region = request.args.get("region", "red_sea")
+    results = sq.events_intersecting_region(region)
+    return jsonify(list(results))
+
+
+@app.route("/api/sparql/geospatial/aggregate")
+def api_geospatial_aggregate():
+    """GeoSPARQL: aggregate observations by region."""
+    ind = request.args.get("indicator", "daily_precip_total")
+    date = request.args.get("date", "2025-08-19")
+    region = request.args.get("region", None)
+    results = sq.spatial_aggregation(ind, date, region)
+    return jsonify(list(results))
+
+
+# ═══════════════════════════════════════════
+# SPARQL API — OWL-Time temporal queries (P2)
+# ═══════════════════════════════════════════
+
+@app.route("/api/sparql/temporal/sequence")
+def api_temporal_sequence():
+    """OWL-Time: cascading event chains."""
+    ht = request.args.get("hazard_type", None)
+    results = sq.temporal_event_sequence(ht)
+    return jsonify(list(results))
+
+
+@app.route("/api/sparql/temporal/timeline")
+def api_temporal_timeline():
+    """OWL-Time: event timeline with dates and severities."""
+    start = request.args.get("start", None)
+    end = request.args.get("end", None)
+    results = sq.event_timeline(start, end)
+    return jsonify(list(results))
+
+
+@app.route("/api/sparql/temporal/cascade/<event_id>")
+def api_temporal_cascade(event_id):
+    """OWL-Time: trace cascading chain from an event."""
+    results = sq.cascading_hazard_chain(event_id)
+    return jsonify(list(results))
+
+
+# ═══════════════════════════════════════════
+# SPARQL API — PROV-O provenance queries (P2)
+# ═══════════════════════════════════════════
+
+@app.route("/api/sparql/provenance/indicator/<indicator_id>")
+def api_provenance_indicator(indicator_id):
+    """PROV-O: full provenance chain for an indicator."""
+    results = sq.provenance_chain(indicator_id)
+    return jsonify(list(results))
+
+
+@app.route("/api/sparql/provenance/event/<event_id>")
+def api_provenance_event(event_id):
+    """PROV-O: how an event was generated."""
+    results = sq.provenance_event(event_id)
+    return jsonify(list(results))
+
+
+# ═══════════════════════════════════════════
 # Original API — Event detection (needs live NetCDF)
 # ═══════════════════════════════════════════
 
