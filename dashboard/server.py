@@ -81,11 +81,12 @@ def api_sparql_summary():
             elif "Event/" in s_str:
                 ntype = "Event"
 
+            clean_id = node_id.split("/")[-1]  # strip type prefix
             nodes.append({
-                "id": node_id,
+                "id": clean_id,
                 "type": ntype,
                 "group": ntype,
-                "label": node_id.split("/")[-1],
+                "label": clean_id if len(clean_id) <= 30 else clean_id[:28]+"…",
                 "title": node_id,
             })
 
@@ -107,8 +108,8 @@ def api_sparql_summary():
             continue
         if rel and PREFIX in s_str and PREFIX in o_str:
             edges.append({
-                "from": str(s).split("#")[-1],
-                "to": str(o).split("#")[-1],
+                "from": str(s).split("#")[-1].split("/")[-1],
+                "to": str(o).split("#")[-1].split("/")[-1],
                 "label": rel,
                 "arrows": "to,from" if rel == "co_occurs_with" else "to",
             })

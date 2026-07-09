@@ -75,6 +75,8 @@ DMDO 作为静态本体只能记录"日降水 = 254mm"，无法表达"这个 254
 | PROV-O | prov:wasDerivedFrom 推导链、prov:wasGeneratedBy 生成活动、prov:wasAttributedTo 数据源归属 |
 | QUDT | 所有观测值绑定国际单位（QUDT.DegreeCelsius, QUDT.MilliM, QUDT["M-PER-SEC"] 等） |
 
+![image-20260709220827927](C:/Users/13936/AppData/Roaming/Typora/typora-user-images/image-20260709220827927.png)
+
 ---
 
 ## 2. 核心架构演进：从"重型框架"到"敏捷调度"
@@ -85,9 +87,15 @@ DMDO 作为静态本体只能记录"日降水 = 254mm"，无法表达"这个 254
 
 以 AutoGen 为代表的框架主打"多 Agent 协作与辩论"，这种模式在创意写作或开放式编程中表现优异，但会引入极大的非确定性。MAZU 是一个面向高风险预警的系统，面对可能危及生命的突发性山洪或极端热浪，绝不能允许两个 AI 角色在后台进行不可控的"长篇辩论"。单体 Agent 配合精确的函数约束，能最大程度收敛大模型的自由发散。
 
+![14702678f233ed98b2f4ea19443a6de8](E:/微信/xwechat_files/wxid_dh1hlhke5o5n22_2e39/temp/RWTemp/2026-07/14702678f233ed98b2f4ea19443a6de8.png)
+
 ### 2.2 严格的链式依赖与"奥卡姆剃刀"原理
 
 从气象学第一性原理出发，本项目的预警主线是严谨且单向线性的：读取 .nc 气象张量 → 模型侦测异常 → RAG 查询知识图谱 → 结构化预警分发。这是一个标准的有向无环流程（DAG）。原生的 Function Calling 循环已经完美契合这种链式任务，且运行开销极低。
+
+![d90d67e3c6893258488ee605e74d8eef](E:/微信/xwechat_files/wxid_dh1hlhke5o5n22_2e39/temp/RWTemp/2026-07/d90d67e3c6893258488ee605e74d8eef.jpg)
+
+![1_GnMghFkLYP6LGbbGsPYLww](E:/微信/xwechat_files/wxid_dh1hlhke5o5n22_2e39/msg/file/2026-07/1_GnMghFkLYP6LGbbGsPYLww.webp)
 
 ### 2.3 透明度、可控性与白盒调试
 
