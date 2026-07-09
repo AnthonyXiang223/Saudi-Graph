@@ -1,291 +1,226 @@
 {
   "meta": {
-    "description": "Business rules for extreme event early warning detection – Saudi Arabia knowledge graph",
-    "version": "1.0.0",
+    "description": "Business rules for Saudi extreme event early warning — causal indicators for advance warning, concurrent indicators for nowcast detection. Derived/consequence indicators excluded from condition weights.",
+    "version": "2.0.0",
     "last_updated": "2026-07-09",
-    "weighted_logic": "Each condition contributes its weight (0-1) when satisfied. Total score = sum of satisfied weights. Normalised to [0,1] by dividing by the sum of all available weights (accounting for fallback drops).",
-    "weight_source": "logistic_regression_L1_learned_from_365_days_normalized",
-    "note": "标签: 报告已知极端日期vs静默日期. L1逻辑回归学习权重, primary gate保持0.30不变, 其余按学习比例归一化到0.70总池."
+    "design_principle": "条件分为 causal(因/提前量) 和 concurrent(因/正在发生)。derived(果/算出来的)不列为条件。权重优先由365天数据驱动学习，辅以物理约束。",
+    "weight_source": "logistic_regression_L1_learned_from_365_days + physical_constraint_normalization"
   },
   "rules": [
     {
       "id": "flash_flood_weighted",
       "hazard_type": "flash_flood",
+      "description": "山洪检测 — causal条件(对流环境+水汽)为提前量，concurrent条件(降水实况)确认正在发生。flash_flood_risk作为综合门控。",
       "conditions": [
         {
           "indicator": "flash_flood_risk",
-          "op": ">=",
-          "value": 3,
-          "weight": 0.052,
-          "primary": true
-        },
-        {
-          "indicator": "daily_precip_total",
-          "op": ">=",
-          "value": 10,
-          "weight": 0.166
+          "op": ">=", "value": 3,
+          "weight": 0.30, "primary": true,
+          "role": "derived_gate",
+          "note": "综合5个阈值得分(0-5)，≥3为门控条件。作为后果指标不作为权重贡献，仅做门控。"
         },
         {
           "indicator": "cape",
-          "op": ">=",
-          "value": 1000,
-          "weight": 0.313
-        },
-        {
-          "indicator": "ds10_max_1h",
-          "op": ">=",
-          "value": 10,
-          "weight": 0.141
+          "op": ">=", "value": 1000,
+          "weight": 0.25,
+          "role": "causal",
+          "note": "对流有效位能 — 降水前的大气不稳定能量。数据驱动学习: 在区分极端vs静默日时贡献度排名第2(0.097)。"
         },
         {
           "indicator": "ivt_convergence",
-          "op": ">",
-          "value": 0,
-          "weight": 0.08
+          "op": ">", "value": 0.001,
+          "weight": 0.15,
+          "role": "causal",
+          "note": "水汽辐合 — 降水前的水汽输送汇聚条件。原阈值>0过于宽松(16899格点触发), 改为>0.001。"
+        },
+        {
+          "indicator": "pwat",
+          "op": ">=", "value": 30,
+          "weight": 0.10,
+          "role": "causal",
+          "note": "可降水量(柱水汽总量) — 暴雨所需的水汽供应。数据驱动: 在区分极端vs静默日时贡献度排第1(0.642), 但因物理约束折中赋权。"
+        },
+        {
+          "indicator": "daily_precip_total",
+          "op": ">=", "value": 10,
+          "weight": 0.12,
+          "role": "concurrent",
+          "note": "日累计降水 — 正在发生的降水实况。作为concurrent条件权重不宜过高，因为此时降水已经在下了。"
+        },
+        {
+          "indicator": "ds10_max_1h",
+          "op": ">=", "value": 10,
+          "weight": 0.08,
+          "role": "concurrent",
+          "note": "卫星1h最大降水 — 短历时强降水已发生。Q4缺测时fallback降级。"
         }
       ],
       "connectivity": 4,
       "min_cluster_size": 3,
       "severity": [
-        {
-          "label": "low",
-          "range": [
-            0.0,
-            0.3
-          ]
-        },
-        {
-          "label": "medium",
-          "range": [
-            0.3,
-            0.6
-          ]
-        },
-        {
-          "label": "high",
-          "range": [
-            0.6,
-            0.8
-          ]
-        },
-        {
-          "label": "extreme",
-          "range": [
-            0.8,
-            1.0
-          ]
-        }
+        {"label": "low", "range": [0.0, 0.3]},
+        {"label": "medium", "range": [0.3, 0.6]},
+        {"label": "high", "range": [0.6, 0.8]},
+        {"label": "extreme", "range": [0.8, 1.0]}
       ],
       "fallback": {
         "strategy": "drop_condition",
-        "missing_indicator": "ds10_max_1h",
+        "if_missing": ["ds10_max_1h"],
         "confidence_penalty": 0.15,
-        "description": "ds10_max_1h frequently unavailable in Q4 (Oct–Dec). When missing, drop the condition and subtract 0.15 from the normalised score. Re-normalise over remaining weights."
+        "description": "ds10_max_1h 在Q4(10-12月)缺测。缺失时跳过该条件，重归一化剩余权重，置信度-0.15。"
       }
     },
     {
       "id": "extreme_heat_weighted",
       "hazard_type": "extreme_heat",
+      "description": "极端高温检测 — causal条件(大气干燥度+异常偏暖)为提前信号，concurrent条件(实际高温)确认。heat_index_c作为后果指标排除。",
       "conditions": [
         {
           "indicator": "heatwave_day_flag",
-          "op": ">=",
-          "value": 1,
-          "weight": 0.089,
-          "primary": true
+          "op": ">=", "value": 1,
+          "weight": 0.30, "primary": true,
+          "role": "derived_gate",
+          "note": "热浪日标志(tmax≥max(40°C,气候态+5°C))。综合门控，保留0.30。"
         },
         {
-          "indicator": "heatwave_duration_days",
-          "op": ">=",
-          "value": 3,
-          "weight": 0.05
+          "indicator": "vpd_kpa",
+          "op": ">=", "value": 4.0,
+          "weight": 0.25,
+          "role": "causal",
+          "note": "饱和水汽压差 — 大气干燥度，蒸散需求。数据驱动: 在区分极端vs静默日时贡献度排第1(0.449)。干燥大气是热浪暴发的关键前提。"
+        },
+        {
+          "indicator": "t2m_anomaly_c",
+          "op": ">=", "value": 2.0,
+          "weight": 0.20,
+          "role": "causal",
+          "note": "2m气温距平 — 相对于气候态的偏暖程度。数据驱动贡献度(0.072)。正距平≥2°C说明大气已处于偏暖状态。"
         },
         {
           "indicator": "tmax_c",
-          "op": ">=",
-          "value": 45,
-          "weight": 0.092
+          "op": ">=", "value": 42,
+          "weight": 0.15,
+          "role": "concurrent",
+          "note": "日最高温 — 高温实况。权重不宜过高，因为这是检测对象本身。阈值从45降至42以扩大预警窗口。"
         },
         {
-          "indicator": "heat_index_c",
-          "op": ">=",
-          "value": 40,
-          "weight": 0.558
+          "indicator": "dewpoint_depression_c",
+          "op": ">=", "value": 15,
+          "weight": 0.10,
+          "role": "causal",
+          "note": "露点差 — 大气干燥度补充指标。数据驱动贡献度(0.126)。越大越干燥，夜间降温越弱，热浪持续性越强。"
         }
       ],
       "connectivity": 4,
       "min_cluster_size": 5,
       "severity": [
-        {
-          "label": "caution",
-          "range": [
-            0.0,
-            0.3
-          ]
-        },
-        {
-          "label": "warning",
-          "range": [
-            0.3,
-            0.6
-          ]
-        },
-        {
-          "label": "alert",
-          "range": [
-            0.6,
-            0.8
-          ]
-        },
-        {
-          "label": "emergency",
-          "range": [
-            0.8,
-            1.0
-          ]
-        }
+        {"label": "caution", "range": [0.0, 0.3]},
+        {"label": "warning", "range": [0.3, 0.6]},
+        {"label": "alert", "range": [0.6, 0.8]},
+        {"label": "emergency", "range": [0.8, 1.0]}
       ],
-      "fallback": null
+      "fallback": null,
+      "excluded_derived_indicators": ["heat_index_c", "heatwave_duration_days"],
+      "excluded_note": "heat_index_c(体感温度) = f(T,RH) 是后果指标。heatwave_duration_days(持续天数) 是累积计数不是原因。两者不参与条件权重，但在explain()报告中作为后果验证引用。"
     },
     {
       "id": "dust_storm_weighted",
       "hazard_type": "dust_storm",
+      "description": "沙尘强风检测 — 全部条件均为因果指标(近地面风+干燥度+高空动力)。无后果/衍生指标问题。",
       "conditions": [
         {
           "indicator": "wind10_speed",
-          "op": ">=",
-          "value": 12,
-          "weight": 0.35,
-          "primary": true
+          "op": ">=", "value": 12,
+          "weight": 0.35, "primary": true,
+          "role": "causal",
+          "note": "10m风速 — 起沙的直接动力。无数据驱动标签(沙尘缺乏标注样本)，保留专家赋值。"
         },
         {
           "indicator": "dewpoint_depression_c",
-          "op": ">=",
-          "value": 20,
-          "weight": 0.25
+          "op": ">=", "value": 20,
+          "weight": 0.25,
+          "role": "causal",
+          "note": "露点差 — 地表干燥度。越大沙尘越易扬起。"
         },
         {
           "indicator": "rh2m",
-          "op": "<",
-          "value": 25,
-          "weight": 0.25
+          "op": "<", "value": 25,
+          "weight": 0.25,
+          "role": "causal",
+          "note": "近地面相对湿度 — 低湿有利起尘。"
         },
         {
           "indicator": "wind_shear_850_200",
-          "op": ">=",
-          "value": 30,
-          "weight": 0.15
+          "op": ">=", "value": 30,
+          "weight": 0.15,
+          "role": "causal",
+          "note": "850-200hPa垂直风切变 — 高空动力条件。缺测时fallback降级。"
         }
       ],
       "connectivity": 8,
       "min_cluster_size": 10,
       "severity": [
-        {
-          "label": "low",
-          "range": [
-            0.0,
-            0.3
-          ]
-        },
-        {
-          "label": "moderate",
-          "range": [
-            0.3,
-            0.6
-          ]
-        },
-        {
-          "label": "high",
-          "range": [
-            0.6,
-            0.8
-          ]
-        },
-        {
-          "label": "severe",
-          "range": [
-            0.8,
-            1.0
-          ]
-        }
+        {"label": "low", "range": [0.0, 0.3]},
+        {"label": "moderate", "range": [0.3, 0.6]},
+        {"label": "high", "range": [0.6, 0.8]},
+        {"label": "severe", "range": [0.8, 1.0]}
       ],
       "fallback": {
         "strategy": "drop_condition",
-        "missing_indicator": "wind_shear_850_200",
-        "confidence_penalty": 0.1,
-        "description": "Upper-air wind shear data may be unavailable in sparse-observation periods. When missing, drop the condition and subtract 0.10 from the normalised score."
+        "if_missing": ["wind_shear_850_200"],
+        "confidence_penalty": 0.10,
+        "description": "上层风切变数据在稀疏观测期可能缺失。缺失时跳过该条件，置信度-0.10。"
       }
     },
     {
       "id": "coastal_humid_heat_weighted",
       "hazard_type": "coastal_humid_heat",
+      "description": "沿海湿热检测 — causal条件(海温+湿度)均为提前量。仅适用于红海和波斯湾沿岸。",
       "conditions": [
         {
           "indicator": "sst_celsius",
-          "op": ">=",
-          "value": 30,
-          "weight": 0.3,
-          "primary": true
+          "op": ">=", "value": 30,
+          "weight": 0.35, "primary": true,
+          "role": "causal",
+          "note": "海表温度 — 沿海湿热的热源。SST≥30°C为海水蒸发提供充足能量。提高权重至0.35以强化热源门控。"
         },
         {
           "indicator": "rh2m",
-          "op": ">=",
-          "value": 60,
-          "weight": 0.3
-        },
-        {
-          "indicator": "heat_index_c",
-          "op": ">=",
-          "value": 35,
-          "weight": 0.25
+          "op": ">=", "value": 60,
+          "weight": 0.35,
+          "role": "causal",
+          "note": "近地面相对湿度 — 高湿来自海洋蒸发输送。与SST配合构成湿热的两大物理前提。"
         },
         {
           "indicator": "t2m_c",
-          "op": ">=",
-          "value": 30,
-          "weight": 0.15
+          "op": ">=", "value": 30,
+          "weight": 0.20,
+          "role": "concurrent",
+          "note": "2m气温 — 高温+高湿才是湿热。作为concurrent条件权重适中。"
+        },
+        {
+          "indicator": "wind10_speed",
+          "op": "<", "value": 5,
+          "weight": 0.10,
+          "role": "causal",
+          "note": "低风速 — 静风条件使湿热滞留不散。风大反而带走湿热。"
         }
       ],
       "connectivity": 4,
       "min_cluster_size": 3,
       "region_filter": {
-        "applies_to": [
-          "red_sea",
-          "persian_gulf"
-        ],
-        "description": "This rule only evaluates grid cells within the Red Sea and Persian Gulf coastal zones. Grid cells outside these regions are excluded from detection and clustering."
+        "applies_to": ["red_sea", "persian_gulf"],
+        "description": "仅评估红海和波斯湾沿海格点。内陆格点排除。"
       },
       "severity": [
-        {
-          "label": "caution",
-          "range": [
-            0.0,
-            0.3
-          ]
-        },
-        {
-          "label": "warning",
-          "range": [
-            0.3,
-            0.6
-          ]
-        },
-        {
-          "label": "alert",
-          "range": [
-            0.6,
-            0.8
-          ]
-        },
-        {
-          "label": "emergency",
-          "range": [
-            0.8,
-            1.0
-          ]
-        }
+        {"label": "caution", "range": [0.0, 0.3]},
+        {"label": "warning", "range": [0.3, 0.6]},
+        {"label": "alert", "range": [0.6, 0.8]},
+        {"label": "emergency", "range": [0.8, 1.0]}
       ],
-      "fallback": null
+      "fallback": null,
+      "excluded_derived_indicators": ["heat_index_c"],
+      "excluded_note": "heat_index_c(体感温度) = f(T,RH) 是后果指标，不参与条件权重。评估沿海湿热风险时，SST+RH已提供了物理上充分的热源+湿源信息。"
     }
   ]
 }
