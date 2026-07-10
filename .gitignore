@@ -18,6 +18,5 @@ instance/
 .DS_Store
 Thumbs.db
 
-# Temp
-*.tmp
-*.log
+# API keys
+.env
