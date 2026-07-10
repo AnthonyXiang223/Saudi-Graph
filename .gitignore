@@ -20,3 +20,7 @@ Thumbs.db
 
 # API keys
 .env
+.cdsapirc
+
+# Forecast data (downloaded)
+forecast/
