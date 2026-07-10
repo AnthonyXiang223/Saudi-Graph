@@ -53,13 +53,13 @@ class EventDetector:
         "!=": lambda a, b: ~np.isclose(a, b),
     }
 
-    def __init__(self, kg_graph, datalayer):
+    def __init__(self, rules, datalayer):
         """
         Args:
-            kg_graph: KnowledgeGraph instance (for rule lookup)
+            rules: list of rule dicts from rules.json
             datalayer: DataLayer instance (for loading xarray data)
         """
-        self.kg = kg_graph
+        self.rules = rules
         self.data = datalayer
         self.events: List[Event] = []
         self._event_counter = 0
@@ -94,11 +94,10 @@ class EventDetector:
         return events
 
     def _get_rule(self, hazard_type: str) -> Optional[Dict]:
-        """Look up the detection rule for a hazard type from the KG."""
-        # Rules are stored as nodes in the graph with attributes
-        for node, data in self.kg.graph.nodes(data=True):
-            if data.get("type") == "Rule" and data.get("hazard_type") == hazard_type:
-                return data
+        """Look up the detection rule for a hazard type from rules.json."""
+        for rule in self.rules:
+            if rule.get("hazard_type") == hazard_type:
+                return rule
         return None
 
     def _apply_rule(self, date_str: str, ds, rule: Dict) -> List[Event]:

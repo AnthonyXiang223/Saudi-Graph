@@ -14,18 +14,19 @@ PROJECT_DIR = os.path.dirname(DASHBOARD_DIR)
 SCHEMA_DIR = os.path.join(PROJECT_DIR, "schema")
 DATA_DIR = os.path.join(PROJECT_DIR, "indicators")
 
-# ── Init both backends ──
-print("Initializing networkx KG...")
-from kg.query import QueryEngine
-qe = QueryEngine(SCHEMA_DIR, DATA_DIR)
-qe.init()
-
+# ── Init KWG-based DMDO RDF graph ──
 print("Initializing DMDO RDF graph...")
 from kg.owl import SaudiDMDOConverter, SPARQLQueries
 converter = SaudiDMDOConverter(SCHEMA_DIR, DATA_DIR)
 converter.build_graph()
 sq = SPARQLQueries(converter)
-print(f"Ready. networkx: {qe.kg_summary()['total_nodes']} nodes, RDF: {len(converter.graph)} triples")
+
+# Load rules.json for event detection
+import json
+with open(os.path.join(SCHEMA_DIR, "rules.json"), "r", encoding="utf-8") as f:
+    _rules_data = json.load(f)
+
+print(f"Ready. RDF: {len(converter.graph)} triples, Rules: {len(_rules_data['rules'])} loaded")
 
 
 # ═══════════════════════════════════════════
@@ -426,14 +427,17 @@ def api_provenance_event(event_id):
 
 @app.route("/api/detect", methods=["POST"])
 def api_detect():
+    from kg.datalayer import DataLayer
+    from kg.event_detector import EventDetector
     body = request.get_json() or {}
     date_str = body.get("date", "2025-08-19")
     hazard_type = body.get("hazard_type", None)
     hazard_types = [hazard_type] if hazard_type else None
-    events = qe.detect_events(date_str, hazard_types)
+    detector = EventDetector(_rules_data["rules"], DataLayer(DATA_DIR))
+    events = detector.detect_events(date_str, hazard_types)
     results = []
     for e in events:
-        converter.add_event(e)  # Also write to RDF
+        converter.add_event(e)
         results.append({
             "event_id": e.event_id, "date": e.date,
             "hazard_type": e.hazard_type, "severity": e.severity,
@@ -448,7 +452,8 @@ def api_detect():
 
 @app.route("/api/kg/summary")
 def api_kg_summary():
-    return jsonify(qe.kg_summary())
+    """Redirect to SPARQL summary (old compatibility endpoint)."""
+    return jsonify({"triples": len(converter.graph), "indicators": len(converter._op_by_id), "rules": len(_rules_data["rules"])})
 
 
 if __name__ == "__main__":
