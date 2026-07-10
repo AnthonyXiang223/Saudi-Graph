@@ -212,20 +212,17 @@ TOOLS = [
     },
 
     # ═══════════════════════════════════════════════════
-    # Event Detection (live NetCDF)
+    # Event Detection — Historical (ERA5 NetCDF)
     # ═══════════════════════════════════════════════════
     {
         "type": "function",
         "function": {
             "name": "detect_extreme_events",
-            "description": "运行极端事件检测引擎，在指定日期检测灾害事件。返回每个事件的位置、面积、严重度评分和触发条件详情。适用于'2025-08-19有没有山洪风险''明天会不会有极端高温'等问题。",
+            "description": "运行极端事件检测引擎，分析历史日期的灾害事件。基于ERA5再分析数据(indicators/目录)。适用于'2025-08-19发生了什么'等回顾分析。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "date": {
-                        "type": "string",
-                        "description": "日期 YYYYMMDD，如 20250819"
-                    },
+                    "date": {"type": "string", "description": "日期 YYYYMMDD，如 20250819"},
                     "hazard_types": {
                         "type": "array",
                         "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
@@ -233,6 +230,36 @@ TOOLS = [
                     }
                 },
                 "required": ["date"]
+            }
+        }
+    },
+
+    # ═══════════════════════════════════════════════════
+    # Event Detection — Forecast (AIFS NetCDF)
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "detect_future_events",
+            "description": "基于 ECMWF AIFS 预报数据，检测未来几天的极端灾害风险。数据来自 forecast/ 目录。适用于'明天会有山洪吗''未来3天利雅得会有极端高温吗'等预报问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "forecast_day": {
+                        "type": "integer",
+                        "description": "预报天数偏移（1=明天, 2=后天...最多7天），默认1"
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "关注地点，如'利雅得''红海沿岸''吉达'，可选"
+                    },
+                    "hazard_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
+                        "description": "要检测的灾害类型列表，不传则检测全部四种"
+                    }
+                },
+                "required": ["forecast_day"]
             }
         }
     },
@@ -295,11 +322,154 @@ class ToolDispatcher:
                 r = self.requests.post(f"{self.api_base}/api/detect", json=body)
                 return json.dumps(r.json(), ensure_ascii=False, indent=2)
 
+            elif tool_name == "detect_future_events":
+                return self._detect_from_forecast(arguments)
+
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
         except Exception as e:
             return json.dumps({"error": str(e), "tool": tool_name})
+
+    def _detect_from_forecast(self, args: dict) -> str:
+        """从 AIFS 预报数据运行事件检测"""
+        import numpy as np
+        import xarray as xr
+        import os, sys
+
+        forecast_day = args.get("forecast_day", 1)
+        hazard_types = args.get("hazard_types", None)
+        location = args.get("location", None)
+
+        nc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "forecast", f"saudi_forecast_d{forecast_day:02d}.nc")
+
+        if not os.path.exists(nc_path):
+            return json.dumps({
+                "error": f"预报文件不存在: {nc_path}",
+                "hint": f"请先运行: python get_forecast.py --days {forecast_day}"
+            }, ensure_ascii=False)
+
+        # 加载预报 + 计算派生指标
+        ds = xr.open_dataset(nc_path)
+        lat_vals = ds['lat'].values
+        lon_vals = ds['lon'].values
+
+        # 计算 event_detector 需要的基本指标
+        indicators = {}
+        if 't2m' in ds.variables:
+            indicators['t2m_c'] = ds['t2m'].values - 273.15  # K → °C
+        if 'tp' in ds.variables:
+            indicators['daily_precip_total'] = ds['tp'].values
+        if 'u10' in ds.variables and 'v10' in ds.variables:
+            indicators['wind10_speed'] = np.sqrt(ds['u10'].values**2 + ds['v10'].values**2)
+        if 'pwat' in ds.variables:
+            indicators['pwat'] = ds['pwat'].values
+        if 'd2m' in ds.variables:
+            d2m_c = ds['d2m'].values - 273.15
+            if 't2m_c' in indicators:
+                indicators['dewpoint_depression_c'] = indicators['t2m_c'] - d2m_c
+        if 'tcc' in ds.variables:
+            indicators['total_cloud_cover'] = ds['tcc'].values * 100.0  # 0-1 → %
+
+        # 加载规则
+        schema_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema")
+        with open(os.path.join(schema_dir, "rules.json"), "r", encoding="utf-8") as f:
+            rules_data = json.load(f)
+
+        # 对每种灾害做简单阈值检测（无需完整的 event_detector）
+        results = []
+        if hazard_types is None:
+            hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+
+        for htype in hazard_types:
+            rule = next((r for r in rules_data["rules"] if r["hazard_type"] == htype), None)
+            if not rule:
+                continue
+
+            # 取条件中可用的指标
+            available_conds = []
+            for cond in rule["conditions"]:
+                ind_id = cond["indicator"]
+                if ind_id in indicators:
+                    available_conds.append(cond)
+
+            if len(available_conds) < 2:
+                continue
+
+            # 简化的加权评分
+            mask = np.ones_like(list(indicators.values())[0], dtype=bool)
+            score = np.zeros_like(mask, dtype=float)
+            total_w = 0.0
+            triggered = []
+
+            for cond in available_conds:
+                ind_id = cond["indicator"]
+                op = cond.get("op", cond.get("condition", ">="))
+                th = cond["value"]
+                w = cond["weight"]
+                data = indicators[ind_id]
+
+                if op == ">=":
+                    hit = data >= th
+                elif op == ">":
+                    hit = data > th
+                elif op == "<":
+                    hit = data < th
+                elif op == "<=":
+                    hit = data <= th
+                else:
+                    continue
+
+                score += w * hit.astype(float)
+                total_w += w
+                n_hit = int(hit.sum())
+                peak = float(data.max()) if not np.isnan(data).all() else 0
+                if n_hit > 0:
+                    triggered.append({"indicator": ind_id, "condition": f"{op} {th}",
+                                       "cells_triggered": n_hit, "peak_value": round(peak, 2)})
+
+            if total_w > 0:
+                score = score / total_w
+
+            # Primary gate
+            primary_cond = next((c for c in rule["conditions"] if c.get("primary")), None)
+            if primary_cond and primary_cond["indicator"] in indicators:
+                pdata = indicators[primary_cond["indicator"]]
+                pmask = pdata >= primary_cond["value"]
+                score = np.where(pmask, score, score * 0.25)
+
+            # 找到最高风险区域
+            max_score = float(np.nanmax(score))
+            n_risky = int((score >= 0.3).sum())
+            risky_lat = float(lat_vals[np.unravel_index(np.nanargmax(score), score.shape)[0]])
+            risky_lon = float(lon_vals[np.unravel_index(np.nanargmax(score), score.shape)[1]])
+
+            sev = "extreme" if max_score >= 0.8 else "high" if max_score >= 0.6 else "medium" if max_score >= 0.3 else "low"
+
+            results.append({
+                "hazard_type": htype,
+                "forecast_day": forecast_day,
+                "max_risk_score": round(max_score, 3),
+                "severity": sev,
+                "grid_cells_at_risk": n_risky,
+                "hotspot_lat": round(risky_lat, 1),
+                "hotspot_lon": round(risky_lon, 1),
+                "triggered_conditions": triggered,
+            })
+
+        ds.close()
+
+        if location:
+            for r in results:
+                r["location_note"] = f"热点 ({r['hotspot_lat']}N, {r['hotspot_lon']}E) 需要空间查询精确定位 {location} 周边"
+
+        return json.dumps({
+            "forecast_day": forecast_day,
+            "forecast_source": "ECMWF AIFS",
+            "results": results,
+            "note": "预报基于 AIFS 全球模型输出，存在不确定性。建议结合实时观测验证。"
+        }, ensure_ascii=False, indent=2)
 
     def _get(self, path):
         r = self.requests.get(f"{self.api_base}{path}")
