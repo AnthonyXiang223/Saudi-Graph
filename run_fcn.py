@@ -61,12 +61,15 @@ def run_fcn_forecast(days: int = 7):
     print(f"  初始场 shape: {x.shape}")
 
     # ── 归一化 ──
-    center = {k: float(v) for k, v in model.center.items()}
-    scale = {k: float(v) for k, v in model.scale.items()}
+    # center/scale are (1, 26, 1, 1) tensors — index by variable position
+    fcn_vars = list(model.input_coords()["variable"])
+    center_vals = model.center[0, :, 0, 0]  # (26,)
+    scale_vals = model.scale[0, :, 0, 0]    # (26,)
     channel_names = list(x.coords["variable"].values)
     for i, ch in enumerate(channel_names):
-        if ch in center and ch in scale:
-            x.values[:, i, :, :] = (x.values[:, i, :, :] - center[ch]) / scale[ch]
+        if ch in fcn_vars:
+            j = fcn_vars.index(ch)
+            x.values[:, i, :, :] = (x.values[:, i, :, :] - float(center_vals[j])) / float(scale_vals[j])
 
     # ── 自回归预报 ──
     n_steps = days * 4  # 4 steps/day (6h each)
@@ -76,29 +79,39 @@ def run_fcn_forecast(days: int = 7):
     lon = x.coords["lon"].values
     mlat = (lat >= SAUDI_LAT[0]) & (lat <= SAUDI_LAT[1])
     mlon = (lon >= SAUDI_LON[0]) & (lon <= SAUDI_LON[1])
-    var_list = list(x.coords["variable"].values)
+    out_var_list = list(model.output_coords(model.input_coords())["variable"])
 
+    # Convert to tensor + coords format
+    x_tensor = x.values  # numpy
+    coords = {k: x.coords[k].values for k in x.coords}
+
+    from collections import OrderedDict
+    import torch
     for step in range(1, n_steps + 1):
-        x = model.forward(x)
-        if step % 50 == 0 or step == 1:
+        co = OrderedDict((k, coords[k]) for k in coords)
+        x_tensor, coords = model(torch.from_numpy(x_tensor).float().cuda(), co)
+        x_tensor = x_tensor.detach().cpu().numpy()
+        coords = {k: v for k, v in coords.items()}
+        if step % 10 == 0 or step == 1:
             print(f"  +{step*6}h", end=" ", flush=True)
 
         if step % 4 == 0:  # 每 24h 保存
             day = step // 4
-            vals = x.values  # numpy: (1, N_vars, 721, 1440)
+            vals = x_tensor  # numpy: (1, N_vars, 721, 1440)
 
             out_vars = {}
             for v in ["t2m", "u10m", "v10m", "tcwv", "msl", "sp"]:
-                if v in var_list:
-                    idx = var_list.index(v)
+                if v in out_var_list:
+                    idx = out_var_list.index(v)
                     raw = vals[0, idx, :, :]
-                    if v in center and v in scale:
-                        raw = raw * scale[v] + center[v]
+                    if v in fcn_vars:
+                        j = fcn_vars.index(v)
+                        raw = raw * float(scale_vals[j]) + float(center_vals[j])
                     out_vars[v] = raw[mlat][:, mlon]
 
             out_ds = xr.Dataset(
                 {k: (["lat", "lon"], v) for k, v in out_vars.items()},
-                coords={"lat": lat[mlat], "lon": lon[mlon]}
+                coords={"lat": coords["lat"][mlat], "lon": coords["lon"][mlon]}
             )
             out_ds.attrs["source"] = "FourCastNet (NVIDIA Earth-2)"
             out_ds.attrs["forecast_day"] = day
