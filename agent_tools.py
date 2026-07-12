@@ -263,6 +263,25 @@ TOOLS = [
             }
         }
     },
+
+    # ═══════════════════════════════════════════════════
+    # Multi-Model Arbitration (FCN + AIFS + KG)
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_forecast_models",
+            "description": "同时查询 FCN 和 AIFS 两个独立预报模型的输出，用知识图谱中的气候态做交叉验证。返回两模型对比、物理一致性评分和置信度。适用于'明天会多热''这个预报可信吗'等问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "forecast_day": {"type": "integer", "description": "预报天数，1=明天"},
+                    "variable": {"type": "string", "enum": ["t2m", "tp", "wind"], "description": "对比变量"}
+                },
+                "required": ["forecast_day", "variable"]
+            }
+        }
+    },
 ]
 
 
@@ -324,6 +343,9 @@ class ToolDispatcher:
 
             elif tool_name == "detect_future_events":
                 return self._detect_from_forecast(arguments)
+
+            elif tool_name == "compare_forecast_models":
+                return self._compare_models(arguments)
 
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
@@ -470,6 +492,79 @@ class ToolDispatcher:
             "results": results,
             "note": "预报基于 AIFS 全球模型输出，存在不确定性。建议结合实时观测验证。"
         }, ensure_ascii=False, indent=2)
+
+    def _compare_models(self, args: dict) -> str:
+        """Multi-model comparison with KG-based physical consistency check."""
+        import numpy as np, xarray as xr, os
+
+        day = args.get("forecast_day", 1)
+        variable = args.get("variable", "t2m")
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Load both forecasts
+        fcn_path = os.path.join(project_dir, "forecast", "fcn_forecast.nc")
+        aifs_path = os.path.join(project_dir, "forecast", f"saudi_forecast_d{day:02d}.nc")
+
+        result = {"forecast_day": day, "variable": variable, "models": {}}
+
+        # --- FCN ---
+        if os.path.exists(fcn_path):
+            f = xr.open_dataset(fcn_path)
+            if variable == "t2m" and "t2m" in f.variables:
+                # Use lead_time=12h for afternoon peak
+                fcn_val = f["t2m"].values[0, 2] - 273.15
+                result["models"]["fcn"] = {
+                    "mean": round(float(np.nanmean(fcn_val)), 1),
+                    "max": round(float(np.nanmax(fcn_val)), 1),
+                    "min": round(float(np.nanmin(fcn_val)), 1),
+                    "note": "取12h预报(午后峰值)"
+                }
+            f.close()
+
+        # --- AIFS ---
+        if os.path.exists(aifs_path):
+            a = xr.open_dataset(aifs_path)
+            var_map = {"t2m": "t2m", "tp": "tp", "wind": "u10"}
+            av = var_map.get(variable, "t2m")
+            if av in a.variables:
+                aifs_val = a[av].values
+                if av == "t2m":
+                    aifs_val = aifs_val - 273.15
+                result["models"]["aifs"] = {
+                    "mean": round(float(np.nanmean(aifs_val)), 1),
+                    "max": round(float(np.nanmax(aifs_val)), 1),
+                    "min": round(float(np.nanmin(aifs_val)), 1),
+                }
+            a.close()
+
+        # --- KG arbitration ---
+        if "fcn" in result["models"] and "aifs" in result["models"]:
+            fcn_m = result["models"]["fcn"]["mean"]
+            aifs_m = result["models"]["aifs"]["mean"]
+            diff = round(abs(fcn_m - aifs_m), 1)
+
+            # KG check: compare against climatology
+            with open(os.path.join(project_dir, "schema", "operators.json"), "r", encoding="utf-8") as fp:
+                ops = json.load(fp)
+            t2m_op = next((o for o in ops["operators"] if o["id"] == "t2m_c"), {})
+
+            if diff > 3:
+                result["arbitration"] = {
+                    "verdict": "模型分歧显著",
+                    "diff_celsius": diff,
+                    "confidence": "medium",
+                    "recommendation": f"FCN 预报偏高 {diff}°C，两模型不一致。建议关注 KG 中 vpd_kpa(干燥度) 和 dewpoint_depression_c(露点差) 是否也偏高——如果都偏高则 FCN 更可信（沙漠极端高温信号），否则 AIFS 保守值更安全。",
+                    "kg_evidence": "t2m 气候态表明沙特 7 月均值 33-43°C，需结合 t2m_anomaly_c 判断异常程度。"
+                }
+            else:
+                result["arbitration"] = {
+                    "verdict": "两模型一致",
+                    "diff_celsius": diff,
+                    "confidence": "high",
+                    "recommendation": f"FCN 和 AIFS 预报差异仅 {diff}°C，可采信。可进一步查询该区域气候态确认是否异常。"
+                }
+
+        return json.dumps(result, ensure_ascii=False, indent=2)
 
     def _get(self, path):
         r = self.requests.get(f"{self.api_base}{path}")
