@@ -1,6 +1,7 @@
 # NetCDF data files (5GB+)
 indicators/
 *.nc
+!forecast/fcn_forecast.nc
 
 # Python cache
 __pycache__/
@@ -23,7 +24,8 @@ Thumbs.db
 .cdsapirc
 
 # Forecast data (downloaded)
-forecast/
+forecast/*
+!forecast/fcn_forecast.nc
 
 # Reports and documentation (keep only README.md)
 *.md
