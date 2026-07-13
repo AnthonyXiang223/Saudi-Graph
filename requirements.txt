@@ -1,0 +1,19 @@
+# MAZU Agent — 沙特极端天气预警系统
+# pip install -r requirements.txt
+
+# Core
+openai>=2.0.0
+flask>=3.0.0
+requests>=2.30.0
+
+# Knowledge Graph
+rdflib>=7.0.0
+
+# Data Layer
+xarray>=2024.0.0
+netCDF4>=1.7.0
+numpy>=1.26.0
+scipy>=1.12.0
+
+# Web UI
+streamlit>=1.50.0

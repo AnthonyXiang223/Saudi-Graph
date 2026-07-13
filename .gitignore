@@ -24,3 +24,22 @@ Thumbs.db
 
 # Forecast data (downloaded)
 forecast/
+
+# Reports and documentation (keep only README.md)
+*.md
+!README.md
+!kg/owl/dmdo/**/*.md
+参考*.md
+沙特*.md
+和kimi*.md
+KG构建报告*.md
+MAZU_Agent_*.md
+saudi_extreme*.md
+report.ipynb
+*.docx
+
+# Archive
+archive/
+
+# Streamlit
+.streamlit/

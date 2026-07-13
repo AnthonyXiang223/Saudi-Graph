@@ -235,13 +235,13 @@ TOOLS = [
     },
 
     # ═══════════════════════════════════════════════════
-    # Event Detection — Forecast (AIFS NetCDF)
+    # Event Detection — Forecast (FCN GPU inference)
     # ═══════════════════════════════════════════════════
     {
         "type": "function",
         "function": {
             "name": "detect_future_events",
-            "description": "基于 ECMWF AIFS 预报数据，检测未来几天的极端灾害风险。数据来自 forecast/ 目录。适用于'明天会有山洪吗''未来3天利雅得会有极端高温吗'等预报问题。",
+            "description": "基于 NVIDIA FourCastNet 本地 GPU 预报，检测未来几天的极端灾害风险。水汽辐合、降水代理等指标从大气状态物理推导。适用于'明天会有山洪吗''未来3天利雅得会有极端高温吗'等预报问题。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -265,23 +265,70 @@ TOOLS = [
     },
 
     # ═══════════════════════════════════════════════════
-    # Multi-Model Arbitration (FCN + AIFS + KG)
+    # Multi-Day Sequence Detection
     # ═══════════════════════════════════════════════════
     {
         "type": "function",
         "function": {
-            "name": "compare_forecast_models",
-            "description": "同时查询 FCN 和 AIFS 两个独立预报模型的输出，用知识图谱中的气候态做交叉验证。返回两模型对比、物理一致性评分和置信度。适用于'明天会多热''这个预报可信吗'等问题。",
+            "name": "detect_forecast_sequence",
+            "description": "批量检测未来连续多天的灾害风险趋势。一次调用返回1-7天的逐日检测结果和趋势分析，避免多次调用。适用于'未来72小时趋势''本周风险变化'等问题。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "forecast_day": {"type": "integer", "description": "预报天数，1=明天"},
-                    "variable": {"type": "string", "enum": ["t2m", "tp", "wind"], "description": "对比变量"}
+                    "start_day": {"type": "integer", "description": "起始预报天数，默认1"},
+                    "end_day": {"type": "integer", "description": "结束预报天数，默认3，最多7"},
+                    "hazard_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
+                        "description": "灾害类型列表，不传则检测全部四种"
+                    }
                 },
-                "required": ["forecast_day", "variable"]
+                "required": []
             }
         }
     },
+
+    # ═══════════════════════════════════════════════════
+    # Composite Multi-Hazard Risk
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "detect_composite_risk",
+            "description": "检测指定日期的复合灾害叠加风险。同时运行四种灾害检测，计算多灾种叠加评分和热点空间重叠度。适用于'有没有复合灾害风险''高温和沙尘会不会同时来'等问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "forecast_day": {"type": "integer", "description": "预报天数偏移，1=明天"},
+                },
+                "required": ["forecast_day"]
+            }
+        }
+    },
+
+    # ═══════════════════════════════════════════════════
+    # Historical Comparison
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_with_history",
+            "description": "将当前 FCN 预报的灾害风险与2025年同期历史检测结果进行对比，评估今年相对于去年的异常程度。适用于'比去年热吗''今年沙尘风险是不是更高'等问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "forecast_day": {"type": "integer", "description": "预报天数偏移"},
+                    "hazard_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
+                        "description": "灾害类型列表"
+                    }
+                },
+                "required": ["forecast_day"]
+            }
+        }
+    },
+
 ]
 
 
@@ -344,8 +391,14 @@ class ToolDispatcher:
             elif tool_name == "detect_future_events":
                 return self._detect_from_forecast(arguments)
 
-            elif tool_name == "compare_forecast_models":
-                return self._compare_models(arguments)
+            elif tool_name == "detect_forecast_sequence":
+                return self._detect_sequence(arguments)
+
+            elif tool_name == "compare_with_history":
+                return self._compare_with_history(arguments)
+
+            elif tool_name == "detect_composite_risk":
+                return self._detect_composite_risk(arguments)
 
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
@@ -353,218 +406,940 @@ class ToolDispatcher:
         except Exception as e:
             return json.dumps({"error": str(e), "tool": tool_name})
 
-    def _detect_from_forecast(self, args: dict) -> str:
-        """从 AIFS 预报数据运行事件检测"""
-        import numpy as np
-        import xarray as xr
-        import os, sys
+    # ═══════════════════════════════════════════════════════
+    # FCN forecast indicator computation
+    # ═══════════════════════════════════════════════════════
 
-        forecast_day = args.get("forecast_day", 1)
-        hazard_types = args.get("hazard_types", None)
-        location = args.get("location", None)
+    def _load_indicators_fcn(self, nc_path: str, forecast_day: int) -> dict:
+        """Load FCN NetCDF → indicator arrays. Selects best lead_time for forecast_day."""
+        import numpy as np, xarray as xr
 
-        nc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "forecast", f"saudi_forecast_d{forecast_day:02d}.nc")
-
-        if not os.path.exists(nc_path):
-            return json.dumps({
-                "error": f"预报文件不存在: {nc_path}",
-                "hint": f"请先运行: python get_forecast.py --days {forecast_day}"
-            }, ensure_ascii=False)
-
-        # 加载预报 + 计算派生指标
         ds = xr.open_dataset(nc_path)
-        lat_vals = ds['lat'].values
-        lon_vals = ds['lon'].values
+        lat = ds['lat'].values
+        lon = ds['lon'].values
+        ind = {}
+        missing = []
 
-        # 计算 event_detector 需要的基本指标
-        indicators = {}
+        # Pick lead_time index closest to forecast_day * 24 h
+        lead_hours = ds['lead_time'].values / 3_600_000_000_000  # ns → hours
+        target_h = forecast_day * 24
+        lt_idx = int(np.argmin(np.abs(lead_hours - target_h)))
+        actual_h = int(lead_hours[lt_idx])
+
+        def _pick(arr):
+            """Extract 2D slice from (time, lead_time, lat, lon) array."""
+            if arr.ndim >= 3:
+                return arr[0, lt_idx, :, :]
+            return arr
+
         if 't2m' in ds.variables:
-            indicators['t2m_c'] = ds['t2m'].values - 273.15  # K → °C
-        if 'tp' in ds.variables:
-            indicators['daily_precip_total'] = ds['tp'].values
-        if 'u10' in ds.variables and 'v10' in ds.variables:
-            indicators['wind10_speed'] = np.sqrt(ds['u10'].values**2 + ds['v10'].values**2)
-        if 'pwat' in ds.variables:
-            indicators['pwat'] = ds['pwat'].values
-        if 'd2m' in ds.variables:
-            d2m_c = ds['d2m'].values - 273.15
-            if 't2m_c' in indicators:
-                indicators['dewpoint_depression_c'] = indicators['t2m_c'] - d2m_c
-        if 'tcc' in ds.variables:
-            indicators['total_cloud_cover'] = ds['tcc'].values * 100.0  # 0-1 → %
+            ind['t2m_c'] = _pick(ds['t2m'].values) - 273.15
+            ind['tmax_c'] = ind['t2m_c']  # forecast 2m temp ≈ daily max
+        else:
+            missing.append('t2m_c')
+            missing.append('tmax_c')
 
-        # 加载规则
-        schema_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema")
-        with open(os.path.join(schema_dir, "rules.json"), "r", encoding="utf-8") as f:
-            rules_data = json.load(f)
+        if 'u10m' in ds.variables and 'v10m' in ds.variables:
+            u10 = _pick(ds['u10m'].values)
+            v10 = _pick(ds['v10m'].values)
+            ind['wind10_speed'] = np.sqrt(u10**2 + v10**2)
+            # Meteorological wind direction (direction wind comes FROM)
+            ind['wind_direction'] = (np.arctan2(-u10, -v10) * 180.0 / np.pi) % 360
+        else:
+            missing.append('wind10_speed')
+            missing.append('wind_direction')
 
-        # 对每种灾害做简单阈值检测（无需完整的 event_detector）
+        if 'tcwv' in ds.variables:
+            ind['pwat'] = _pick(ds['tcwv'].values)
+        else:
+            missing.append('pwat')
+
+        if 'sp' in ds.variables:
+            ind['sp'] = _pick(ds['sp'].values)
+
+        # Wind shear 850-200 hPa
+        if all(v in ds.variables for v in ['u850', 'v850', 'u250', 'v250']):
+            du = _pick(ds['u850'].values) - _pick(ds['u250'].values)
+            dv = _pick(ds['v850'].values) - _pick(ds['v250'].values)
+            ind['wind_shear_850_200'] = np.sqrt(du**2 + dv**2)
+        else:
+            missing.append('wind_shear_850_200')
+
+        # ═══════════════════════════════════════════════════
+        # Moisture & Precipitation Proxy from FCN atmospheric state
+        #
+        # FCN has no direct precipitation output, but precipitation is
+        # physically constrained by: water vapor × convergence × saturation.
+        # We derive a proxy from:
+        #   tcwv  → total column water vapor (kg/m² ≈ mm)
+        #   r850  → RH at 850hPa (%)
+        #   t850  → T at 850hPa (K)
+        #   u850, v850 → horizontal wind at 850hPa (m/s)
+        #
+        # 1. q850 = specific humidity from t850 + r850 (Magnus formula)
+        # 2. Moisture flux: F_u = q850·u850, F_v = q850·v850
+        # 3. Moisture flux convergence: MFC = -∇·(F_u, F_v)  [1/s]
+        # 4. Precip proxy: tcwv × max(0, MFC) × 86400s × (r850/100)²
+        #    → physical units: kg/m²/day ≈ mm/day
+        # ═══════════════════════════════════════════════════
+
+        has_full_moisture = all(v in ds.variables for v in ['r850', 't850', 'u850', 'v850'])
+        has_basic_moisture = all(v in ds.variables for v in ['r850', 't850'])
+        has_tcwv = 'tcwv' in ds.variables
+
+        if has_full_moisture:
+            r850_val = _pick(ds['r850'].values)
+            t850_val = _pick(ds['t850'].values)
+            u850_val = _pick(ds['u850'].values)
+            v850_val = _pick(ds['v850'].values)
+
+            # -- Specific humidity at 850hPa (kg/kg) --
+            t850_c = t850_val - 273.15
+            es_850 = 6.112 * np.exp(17.67 * t850_c / (t850_c + 243.5))  # hPa
+            e_850  = es_850 * np.clip(r850_val, 0.1, 100.0) / 100.0
+            q850   = 0.622 * e_850 / (850.0 - 0.378 * e_850)  # kg/kg
+            ind['specific_humidity_850'] = q850 * 1000.0  # g/kg
+
+            # -- Dewpoint depression at 850hPa --
+            ln_e = np.log(np.maximum(e_850 / 6.112, 1e-10))
+            td850_c = 243.5 * ln_e / (17.67 - ln_e)
+            ind['dewpoint_depression_c'] = t850_c - td850_c
+            ind['rh2m'] = r850_val  # proxy
+
+            # -- Moisture flux convergence --
+            F_u = q850 * u850_val  # kg/kg · m/s
+            F_v = q850 * v850_val
+
+            # Grid spacing in physical meters
+            R = 6371000.0
+            lat_rad = np.deg2rad(lat)
+            dlat_deg = 0.25
+            dlon_deg = 0.25
+            m_per_deg_lat = np.deg2rad(dlat_deg) * R  # ~27830 m, scalar
+            m_per_deg_lon = np.deg2rad(dlon_deg) * R * np.cos(lat_rad)  # (nlat,) array
+
+            dFu_dlon = np.gradient(F_u, dlon_deg, axis=1)  # per degree lon
+            dFv_dlat = np.gradient(F_v, dlat_deg, axis=0)  # per degree lat
+            dFu_dx = dFu_dlon / m_per_deg_lon[:, np.newaxis]  # per meter
+            dFv_dy = dFv_dlat / m_per_deg_lat               # per meter
+            MFC = -(dFu_dx + dFv_dy)  # moisture flux convergence [1/s]
+            MFC_pos = np.maximum(MFC, 0.0)
+
+            # IVT convergence (scaled for rule threshold compatibility)
+            ind['ivt_convergence'] = MFC * 1e6  # scale to ~0.001-0.1 range
+
+            # -- Precipitation proxy (mm/day) --
+            if has_tcwv:
+                tcwv_val = _pick(ds['tcwv'].values)
+                sat_factor = (r850_val / 100.0) ** 2
+                # Physical basis: precip = tcwv × MFC × time × saturation
+                # The 5x calibration accounts for convergence above 850hPa
+                # (850hPa layer captures ~20% of column-integrated MFC)
+                precip_proxy = tcwv_val * MFC_pos * 86400.0 * sat_factor * 5.0
+                ind['daily_precip_total'] = np.clip(precip_proxy, 0.0, 200.0)
+            else:
+                missing.append('daily_precip_total')
+
+        elif has_basic_moisture:
+            # Fallback: moisture vars exist but t850/u850/v850 missing
+            r850_val = _pick(ds['r850'].values)
+            t850_val = _pick(ds['t850'].values)
+            t850_c = t850_val - 273.15
+            es = 6.112 * np.exp(17.67 * t850_c / (t850_c + 243.5))
+            e  = es * np.clip(r850_val, 0.1, 100.0) / 100.0
+            ln_e = np.log(np.maximum(e / 6.112, 1e-10))
+            td850_c = 243.5 * ln_e / (17.67 - ln_e)
+            ind['dewpoint_depression_c'] = t850_c - td850_c
+            ind['rh2m'] = r850_val
+            missing.extend(['daily_precip_total', 'ivt_convergence'])
+        else:
+            missing.extend(['dewpoint_depression_c', 'rh2m',
+                           'daily_precip_total', 'ivt_convergence'])
+
+        ds.close()
+
+        return {
+            "indicators": ind, "lat": lat, "lon": lon, "missing": missing,
+            "lead_time_h": actual_h, "lead_time_idx": lt_idx,
+        }
+
+    @staticmethod
+    def _build_region_threshold_map(lat_vals, lon_vals, region_calib, htype, ind_id, base_th):
+        """Build a 2D threshold map with per-cell region calibration applied."""
+        import numpy as np
+        th_map = np.full((len(lat_vals), len(lon_vals)), base_th, dtype=float)
+
+        if region_calib is None:
+            return th_map
+
+        for rid, rdata in region_calib.get("regions", {}).items():
+            rlat = rdata["lat"]
+            rlon = rdata["lon"]
+            cal = rdata.get("calibration", {}).get(htype, {})
+            offset = cal.get(ind_id, {}).get("threshold_offset", 0)
+            if offset == 0:
+                continue
+            mask_lat = (lat_vals >= rlat[0]) & (lat_vals <= rlat[1])
+            mask_lon = (lon_vals >= rlon[0]) & (lon_vals <= rlon[1])
+            for i in np.where(mask_lat)[0]:
+                for j in np.where(mask_lon)[0]:
+                    th_map[i, j] = base_th + offset
+        return th_map
+
+    @staticmethod
+    def _run_hazard_detection(indicators: dict, lat_vals, lon_vals,
+                               rules_data: dict, hazard_types: list,
+                               region_calib: dict = None) -> list:
+        """Core detection: weighted scoring + primary gate + region calibration."""
+        import numpy as np
+
         results = []
-        if hazard_types is None:
-            hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
-
         for htype in hazard_types:
             rule = next((r for r in rules_data["rules"] if r["hazard_type"] == htype), None)
             if not rule:
                 continue
 
-            # 取条件中可用的指标
             available_conds = []
+            unavailable_conds = []
             for cond in rule["conditions"]:
-                ind_id = cond["indicator"]
-                if ind_id in indicators:
+                if cond["indicator"] in indicators:
                     available_conds.append(cond)
+                else:
+                    unavailable_conds.append(cond["indicator"])
 
             if len(available_conds) < 2:
+                results.append({
+                    "hazard_type": htype,
+                    "detected": False,
+                    "coverage": f"{len(available_conds)}/{len(rule['conditions'])}",
+                    "reason": f"insufficient_indicators",
+                })
                 continue
 
-            # 简化的加权评分
-            mask = np.ones_like(list(indicators.values())[0], dtype=bool)
-            score = np.zeros_like(mask, dtype=float)
+            ref_arr = list(indicators.values())[0]
+            score = np.zeros(ref_arr.shape, dtype=float)
             total_w = 0.0
             triggered = []
 
             for cond in available_conds:
                 ind_id = cond["indicator"]
                 op = cond.get("op", cond.get("condition", ">="))
-                th = cond["value"]
+                base_th = cond["value"]
                 w = cond["weight"]
                 data = indicators[ind_id]
 
+                if data.shape != score.shape:
+                    continue
+
+                # Apply region calibration to threshold
+                th_map = ToolDispatcher._build_region_threshold_map(
+                    lat_vals, lon_vals, region_calib, htype, ind_id, base_th)
+
                 if op == ">=":
-                    hit = data >= th
+                    hit = data >= th_map
                 elif op == ">":
-                    hit = data > th
+                    hit = data > th_map
                 elif op == "<":
-                    hit = data < th
+                    hit = data < th_map
                 elif op == "<=":
-                    hit = data <= th
+                    hit = data <= th_map
                 else:
                     continue
 
                 score += w * hit.astype(float)
                 total_w += w
                 n_hit = int(hit.sum())
-                peak = float(data.max()) if not np.isnan(data).all() else 0
+                peak = float(np.nanmax(data))
+                # Report calibrated threshold range
+                th_min, th_max = float(th_map.min()), float(th_map.max())
+                th_str = f"{op} {base_th}" if th_min == th_max else f"{op} {th_min:.0f}-{th_max:.0f}(区域校准)"
                 if n_hit > 0:
-                    triggered.append({"indicator": ind_id, "condition": f"{op} {th}",
-                                       "cells_triggered": n_hit, "peak_value": round(peak, 2)})
+                    triggered.append({
+                        "indicator": ind_id,
+                        "condition": th_str,
+                        "base_threshold": base_th,
+                        "calibrated_range": [th_min, th_max] if th_min != th_max else None,
+                        "cells_triggered": n_hit,
+                        "peak_value": round(peak, 2),
+                    })
 
             if total_w > 0:
                 score = score / total_w
 
-            # Primary gate
+            # Primary gate (also region-calibrated)
             primary_cond = next((c for c in rule["conditions"] if c.get("primary")), None)
             if primary_cond and primary_cond["indicator"] in indicators:
                 pdata = indicators[primary_cond["indicator"]]
-                pmask = pdata >= primary_cond["value"]
-                score = np.where(pmask, score, score * 0.25)
+                if pdata.shape == score.shape:
+                    pth_map = ToolDispatcher._build_region_threshold_map(
+                        lat_vals, lon_vals, region_calib, htype,
+                        primary_cond["indicator"], primary_cond["value"])
+                    pmask = pdata >= pth_map
+                    score = np.where(pmask, score, score * 0.25)
 
-            # 找到最高风险区域
             max_score = float(np.nanmax(score))
             n_risky = int((score >= 0.3).sum())
-            risky_lat = float(lat_vals[np.unravel_index(np.nanargmax(score), score.shape)[0]])
-            risky_lon = float(lon_vals[np.unravel_index(np.nanargmax(score), score.shape)[1]])
 
-            sev = "extreme" if max_score >= 0.8 else "high" if max_score >= 0.6 else "medium" if max_score >= 0.3 else "low"
+            if np.isfinite(max_score):
+                peak_idx = np.unravel_index(np.nanargmax(score), score.shape)
+                risky_lat = float(lat_vals[peak_idx[0]])
+                risky_lon = float(lon_vals[peak_idx[1]])
+            else:
+                risky_lat = risky_lon = 0.0
+
+            sev = ("extreme" if max_score >= 0.8 else "high" if max_score >= 0.6
+                   else "medium" if max_score >= 0.3 else "low")
 
             results.append({
                 "hazard_type": htype,
-                "forecast_day": forecast_day,
+                "detected": n_risky > 0,
                 "max_risk_score": round(max_score, 3),
                 "severity": sev,
                 "grid_cells_at_risk": n_risky,
                 "hotspot_lat": round(risky_lat, 1),
                 "hotspot_lon": round(risky_lon, 1),
                 "triggered_conditions": triggered,
+                "unavailable_indicators": unavailable_conds,
+                "coverage": f"{len(available_conds)}/{len(rule['conditions'])}",
+                "region_calibrated": region_calib is not None,
             })
 
-        ds.close()
+        return results
 
+    @staticmethod
+    @staticmethod
+    def _fcns_physical_consistency_check(indicators: dict, operators: list) -> dict:
+        """KG物理约束验证——检查FCN预报的内部物理自洽性。
+
+        例如: 高温预报应伴随高露点差(干燥大气)和低相对湿度。
+        返回每种灾害类型的物理一致性评分。
+        """
+        import numpy as np
+
+        PHYSICS_RULES = {
+            "extreme_heat": [
+                ("t2m_c", "dewpoint_depression_c", "positive",
+                 "高温→高露点差(干燥大气→夜间降温弱→热浪持续)"),
+                ("t2m_c", "rh2m", "negative",
+                 "高温→低湿(干热vs湿热区分)"),
+            ],
+            "flash_flood": [
+                ("pwat", "daily_precip_total", "positive",
+                 "高可降水量→高降水(水汽凝结)"),
+                ("pwat", "ivt_convergence", "positive",
+                 "高水汽含量→水汽辐合增强"),
+            ],
+            "dust_storm": [
+                ("wind10_speed", "dewpoint_depression_c", "positive",
+                 "强风+干燥→起尘"),
+                ("dewpoint_depression_c", "rh2m", "negative",
+                 "高露点差⇔低RH(等价干燥度指标)"),
+            ],
+            "coastal_humid_heat": [
+                ("t2m_c", "rh2m", "positive",
+                 "湿热=高温+高湿同时出现"),
+                ("rh2m", "dewpoint_depression_c", "negative",
+                 "高RH⇔低露点差(数学关联)"),
+            ],
+        }
+
+        results = {}
+        for htype, rules in PHYSICS_RULES.items():
+            checks = []
+            passed = 0
+            total = 0
+            for var_a, var_b, expected_sign, explanation in rules:
+                if var_a not in indicators or var_b not in indicators:
+                    continue
+                total += 1
+                a = indicators[var_a].ravel()
+                b = indicators[var_b].ravel()
+                valid = np.isfinite(a) & np.isfinite(b)
+                if valid.sum() < 10:
+                    checks.append({"variables": f"{var_a} vs {var_b}",
+                                   "note": "insufficient valid data"})
+                    continue
+                corr = np.corrcoef(a[valid], b[valid])[0, 1]
+                is_coherent = bool((expected_sign == "positive" and corr > 0) or
+                                 (expected_sign == "negative" and corr < 0))
+                checks.append({
+                    "variables": f"{var_a} ↔ {var_b}",
+                    "expected_sign": expected_sign,
+                    "correlation": round(float(corr), 3),
+                    "coherent": is_coherent,
+                    "meaning": explanation,
+                })
+                if is_coherent:
+                    passed += 1
+
+            score = round(passed / total, 2) if total > 0 else None
+            results[htype] = {
+                "physical_consistency_score": score,
+                "checks_passed": f"{passed}/{total}",
+                "details": checks,
+                "assessment": (
+                    "物理自洽 ✓" if score and score >= 0.5
+                    else "部分自洽 ⚠" if score and score > 0
+                    else "无法评估" if score is None
+                    else "物理不一致 ✗ — 建议查询 KG 交叉验证"
+                ),
+            }
+
+        return results
+
+    # ═══════════════════════════════════════════════════════
+    # Main forecast detection — FCN-only
+    # ═══════════════════════════════════════════════════════
+
+    def _detect_from_forecast(self, args: dict) -> str:
+        """纯 FCN 本地 GPU 预报 + KG 物理一致性验证。"""
+        import numpy as np, os
+
+        forecast_day = args.get("forecast_day", 1)
+        hazard_types = args.get("hazard_types", None)
+        location = args.get("location", None)
+
+        if hazard_types is None:
+            hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        schema_dir = os.path.join(project_dir, "schema")
+        forecast_dir = os.path.join(project_dir, "forecast")
+
+        # ── 1. Load FCN forecast ──
+        fcn_path = os.path.join(forecast_dir, "fcn_forecast.nc")
+        if not os.path.exists(fcn_path):
+            return json.dumps({
+                "error": "FCN 预报文件不存在",
+                "hint": "请在 WSL2 中运行: python run_fcn.py --days 7",
+                "expected_path": fcn_path,
+            }, ensure_ascii=False)
+
+        fcn_data = self._load_indicators_fcn(fcn_path, forecast_day)
+
+        # ── 2. Load rules + operators ──
+        with open(os.path.join(schema_dir, "rules.json"), "r", encoding="utf-8") as f:
+            rules_data = json.load(f)
+        with open(os.path.join(schema_dir, "operators.json"), "r", encoding="utf-8") as f:
+            ops_data = json.load(f)
+
+        # Load region calibration
+        region_calib = None
+        calib_path = os.path.join(schema_dir, "region_calibration.json")
+        if os.path.exists(calib_path):
+            with open(calib_path, "r", encoding="utf-8") as f:
+                region_calib = json.load(f)
+
+        # ── 3. Run hazard detection (with region calibration) ──
+        hazards = self._run_hazard_detection(
+            fcn_data["indicators"], fcn_data["lat"], fcn_data["lon"],
+            rules_data, hazard_types, region_calib)
+        hazards = self._tag_hazards_with_region(hazards)
+
+        # ── 3b. Post-processing: Shamal flag, isolated convection, region report ──
+        post = self._post_process_detection(
+            hazards, fcn_data["indicators"], fcn_data["lat"], fcn_data["lon"])
+
+        # ── 4. KG physical consistency check ──
+        kg_checks = self._fcns_physical_consistency_check(
+            fcn_data["indicators"], ops_data.get("operators", []))
+
+        # ── 5. Composite risk scoring ──
+        composite = self._compute_composite_risk(
+            hazards, fcn_data["indicators"], fcn_data["lat"], fcn_data["lon"],
+            region_calib)
+
+        # ── 6. Build output ──
+        output = {
+            "forecast_source": "NVIDIA FourCastNet (本地 GPU)",
+            "forecast_day": forecast_day,
+            "lead_time_h": fcn_data.get("lead_time_h", "?"),
+            "available_indicators": sorted(fcn_data["indicators"].keys()),
+            "missing_indicators": fcn_data.get("missing", []),
+            "hazards": hazards,
+            "composite_risk": composite,
+            "region_report": post.get("region_report", {}),
+            "shamal_flag": post.get("shamal_flag", False),
+            "shamal_detail": post.get("shamal_detail"),
+            "isolated_convection": post.get("isolated_convection"),
+            "kg_physical_consistency": kg_checks,
+            "region_calibrated": region_calib is not None,
+        }
+
+        # ── 6. Location context ──
         if location:
-            for r in results:
-                r["location_note"] = f"热点 ({r['hotspot_lat']}N, {r['hotspot_lon']}E) 需要空间查询精确定位 {location} 周边"
+            for h in hazards:
+                if h.get("detected"):
+                    h["location_note"] = (
+                        f"热点 ({h['hotspot_lat']}N, {h['hotspot_lon']}E) — "
+                        f"使用 query_observations_nearby 在 {location} 周边精确搜索"
+                    )
+
+        # ── 7. Synthesis ──
+        inconsistent = [htype for htype, c in kg_checks.items()
+                       if c.get("assessment", "").startswith("物理不一致")]
+        partial = [htype for htype, c in kg_checks.items()
+                   if c.get("assessment", "").startswith("部分自洽")]
+        if inconsistent:
+            output["synthesis"] = {
+                "verdict": f"⚠ {len(inconsistent)} 类灾害物理不一致: {inconsistent}",
+                "confidence": "low",
+                "recommendation": (
+                    "FCN 预报中存在物理不一致的指标关系。建议: "
+                    "1) 使用 query_indicator_detail 检查相关指标的物理含义; "
+                    "2) 用 query_hazard_indicators 确认灾害依赖的完整指标链; "
+                    "3) 结合 detect_extreme_events 查看历史相似日期作为参考。"
+                ),
+            }
+        elif partial:
+            output["synthesis"] = {
+                "verdict": f"FCN 预报物理一致性可接受 ({len(partial)} 类部分自洽)",
+                "confidence": "medium",
+                "recommendation": (
+                    "部分指标关系未完全满足物理预期，但整体可接受。"
+                    "查询 KG 中的 co_occurs_with 关系可了解指标间的物理关联。"
+                ),
+            }
+        else:
+            output["synthesis"] = {
+                "verdict": "FCN 预报物理一致性良好",
+                "confidence": "high",
+                "recommendation": (
+                    "FCN 各指标间物理关系自洽。可使用 query_indicator_chain "
+                    "追溯任意指标的计算链，或 query_rule_detail 查看检测规则详情。"
+                ),
+            }
+
+        return json.dumps(output, ensure_ascii=False, indent=2)
+
+    # ═══════════════════════════════════════════════════════
+    # Region tagging
+    # ═══════════════════════════════════════════════════════
+
+    SAUDI_REGIONS = {
+        "red_sea":        {"lat": (16.0, 30.0), "lon": (34.0, 44.0), "label": "红海沿岸"},
+        "persian_gulf":   {"lat": (24.0, 30.0), "lon": (48.0, 56.0), "label": "波斯湾沿岸"},
+        "empty_quarter":  {"lat": (17.0, 23.0), "lon": (45.0, 56.0), "label": "鲁布哈利沙漠"},
+        "central_desert": {"lat": (21.0, 28.0), "lon": (40.0, 48.0), "label": "中部沙漠(利雅得)"},
+        "north":          {"lat": (28.0, 32.0), "lon": (34.0, 48.0), "label": "北部(塔布克/焦夫)"},
+        "south_asir":     {"lat": (16.0, 21.0), "lon": (40.0, 46.0), "label": "南部阿西尔山脉"},
+    }
+
+    @classmethod
+    def _tag_region(cls, lat: float, lon: float) -> str:
+        """Return region label for a coordinate."""
+        for rid, r in cls.SAUDI_REGIONS.items():
+            if r["lat"][0] <= lat <= r["lat"][1] and r["lon"][0] <= lon <= r["lon"][1]:
+                return r["label"]
+        return "未知区域"
+
+    @classmethod
+    def _tag_hazards_with_region(cls, hazards: list) -> list:
+        """Add region field to each detected hazard."""
+        for h in hazards:
+            if h.get("detected") and "hotspot_lat" in h:
+                h["region"] = cls._tag_region(h["hotspot_lat"], h["hotspot_lon"])
+        return hazards
+
+    # ═══════════════════════════════════════════════════════
+    # detect_forecast_sequence — batch multi-day detection
+    # ═══════════════════════════════════════════════════════
+
+    def _detect_sequence(self, args: dict) -> str:
+        """Batch detection across multiple forecast days with trend analysis."""
+        import os
+
+        start_day = args.get("start_day", 1)
+        end_day = min(args.get("end_day", 3), 7)
+        hazard_types = args.get("hazard_types")
+        if start_day > end_day:
+            start_day, end_day = end_day, start_day
+
+        days = list(range(start_day, end_day + 1))
+        daily_results = []
+
+        for day in days:
+            day_args = {"forecast_day": day}
+            if hazard_types:
+                day_args["hazard_types"] = hazard_types
+            raw = self._detect_from_forecast(day_args)
+            try:
+                daily_results.append({"forecast_day": day, "data": json.loads(raw)})
+            except Exception:
+                daily_results.append({"forecast_day": day, "error": "解析失败"})
+
+        # Trend analysis
+        trends = {}
+        if hazard_types is None:
+            hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+
+        for htype in hazard_types:
+            scores = []
+            sevs = []
+            for dr in daily_results:
+                data = dr.get("data", {})
+                hazards = data.get("hazards", [])
+                h = next((r for r in hazards if r["hazard_type"] == htype), {})
+                if h.get("detected"):
+                    scores.append(h.get("max_risk_score", 0))
+                    sevs.append(h.get("severity", "?"))
+                else:
+                    scores.append(0)
+                    sevs.append("未检出")
+
+            # Trend direction
+            if len(scores) >= 2:
+                first_half = sum(scores[:len(scores)//2]) / max(len(scores)//2, 1)
+                second_half = sum(scores[len(scores)//2:]) / max(len(scores) - len(scores)//2, 1)
+                diff = second_half - first_half
+                if diff > 0.1:
+                    direction = "↑ 加剧"
+                elif diff < -0.1:
+                    direction = "↓ 减弱"
+                elif all(s == 0 for s in scores):
+                    direction = "— 未检出"
+                else:
+                    direction = "→ 持续"
+            else:
+                direction = "— 单日无法判断趋势"
+
+            trends[htype] = {
+                "daily_scores": {f"day_{d}": s for d, s in zip(days, scores)},
+                "daily_severities": {f"day_{d}": s for d, s in zip(days, sevs)},
+                "trend": direction,
+                "peak_day": f"day_{days[scores.index(max(scores))]}" if max(scores) > 0 else None,
+                "peak_score": round(max(scores), 3),
+            }
+
+        return json.dumps({
+            "forecast_days": f"day {start_day}-{end_day}",
+            "days_scanned": len(days),
+            "daily_results": [
+                {
+                    "forecast_day": dr["forecast_day"],
+                    "hazards": dr.get("data", {}).get("hazards", []),
+                    "kg_consistency": dr.get("data", {}).get("kg_physical_consistency", {}),
+                }
+                for dr in daily_results
+            ],
+            "trend_analysis": trends,
+        }, ensure_ascii=False, indent=2)
+
+    # ═══════════════════════════════════════════════════════
+    # compare_with_history — forecast vs 2025 same date
+    # ═══════════════════════════════════════════════════════
+
+    def _compare_with_history(self, args: dict) -> str:
+        """Compare FCN forecast with 2025 same-date historical detection."""
+        import os, datetime
+
+        forecast_day = args.get("forecast_day", 1)
+        hazard_types = args.get("hazard_types")
+        if hazard_types is None:
+            hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+
+        # 1. Run forecast detection
+        fc_raw = self._detect_from_forecast({"forecast_day": forecast_day, "hazard_types": hazard_types})
+        try:
+            fc_data = json.loads(fc_raw)
+        except Exception:
+            fc_data = {}
+
+        # 2. Compute corresponding 2025 date
+        today = datetime.date.today()
+        fcn_nc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forecast", "fcn_forecast.nc")
+        try:
+            import xarray as xr
+            with xr.open_dataset(fcn_nc) as f:
+                fcn_init = datetime.date.fromisoformat(str(f["time"].values[0])[:10])
+        except Exception:
+            fcn_init = today
+
+        target_date = fcn_init + datetime.timedelta(days=forecast_day)
+        year_ago = target_date.replace(year=2025)
+        date_str = year_ago.strftime("%Y%m%d")
+
+        # 3. Run historical detection
+        hist_raw = self.dispatch("detect_extreme_events", {"date": date_str})
+        try:
+            hist_data = json.loads(hist_raw)
+        except Exception:
+            hist_data = {"error": "2025 年历史检测失败"}
+
+        # 4. Per-hazard comparison
+        comparison = []
+        fc_hazards = fc_data.get("hazards", [])
+        hist_events = hist_data.get("events", hist_data.get("results", []))
+
+        for htype in hazard_types:
+            fc_h = next((r for r in fc_hazards if r["hazard_type"] == htype), {})
+            hist_h = next((r for r in hist_events if r.get("hazard_type") == htype), {})
+
+            fc_score = fc_h.get("max_risk_score", 0)
+            hist_score = hist_h.get("max_risk_score", 0)
+            fc_sev = fc_h.get("severity", "N/A")
+            hist_sev = hist_h.get("severity", "N/A")
+
+            diff = round(fc_score - hist_score, 3)
+            if diff > 0.15:
+                anomaly = "↑ 显著高于去年同期"
+            elif diff < -0.15:
+                anomaly = "↓ 显著低于去年同期"
+            elif abs(diff) <= 0.05:
+                anomaly = "≈ 与去年同期持平"
+            else:
+                anomaly = "→ 与去年同期略有差异"
+
+            comparison.append({
+                "hazard_type": htype,
+                "fc_score_2026": fc_score,
+                "hist_score_2025": hist_score,
+                "fc_severity": fc_sev,
+                "hist_severity": hist_sev,
+                "score_diff": diff,
+                "anomaly_assessment": anomaly,
+                "fc_hotspot": fc_h.get("hotspot_lat", "?"),
+                "hist_hotspot": hist_h.get("hotspot_lat", "?"),
+            })
+
+        return json.dumps({
+            "forecast_date": target_date.isoformat(),
+            "historical_date": date_str,
+            "comparison": comparison,
+            "note": f"对比 2026 年 FCN 预报 vs 2025 年 ERA5 再分析检测。注意：数据源不同（预报 vs 再分析），对比结果反映相对异常程度，非严格同源对比。",
+        }, ensure_ascii=False, indent=2)
+
+    # ═══════════════════════════════════════════════════════
+    # Post-processing: Shamal flag, region report, isolated convection
+    # ═══════════════════════════════════════════════════════
+
+    @staticmethod
+    def _post_process_detection(hazards: list, indicators: dict,
+                                 lat_vals, lon_vals) -> dict:
+        """Enrich detection results with Shamal wind, region grouping, and
+        isolated convection signals."""
+        import numpy as np
+
+        result = {"shamal_flag": False, "region_report": {}, "isolated_convection": None}
+
+        # ── 1. Shamal wind flag for dust_storm ──
+        dust = next((h for h in hazards if h["hazard_type"] == "dust_storm"), None)
+        wind_dir = indicators.get("wind_direction")
+        wind_spd = indicators.get("wind10_speed")
+
+        if dust and dust.get("detected") and wind_dir is not None:
+            # Shamal = wind from NW (300-360°) or N (345-15°)
+            nw_mask = (wind_dir >= 285) & (wind_dir <= 360)
+            n_mask  = (wind_dir >= 345) | (wind_dir <= 15)
+
+            shamal_cells = int((nw_mask | n_mask).sum())
+            total_cells = wind_dir.size
+            shamal_fraction = shamal_cells / total_cells if total_cells > 0 else 0
+
+            # Check if Shamal wind overlaps with dust risk regions
+            dust_lat = dust.get("hotspot_lat", 0)
+            dust_lon = dust.get("hotspot_lon", 0)
+            near_gulf = (24 <= dust_lat <= 30) and (48 <= dust_lon <= 56)
+
+            if shamal_fraction > 0.15 or (near_gulf and shamal_cells > 0):
+                result["shamal_flag"] = True
+                result["shamal_detail"] = {
+                    "shamal_cells": shamal_cells,
+                    "shamal_fraction": round(shamal_fraction, 2),
+                    "assessment": (
+                        "Shamal 风活跃，NW-N 方向风占 {:.0%}。"
+                        "沙尘可沿西北→东南方向传播至波斯湾沿岸港区。"
+                    ).format(shamal_fraction),
+                }
+
+        # ── 2. Region-grouped risk report ──
+        region_summary = {}
+        for h in hazards:
+            if not h.get("detected"):
+                continue
+            region = h.get("region", "未知区域")
+            if region not in region_summary:
+                region_summary[region] = []
+            region_summary[region].append({
+                "hazard_type": h["hazard_type"],
+                "severity": h.get("severity"),
+                "score": h.get("max_risk_score"),
+                "triggered_count": len(h.get("triggered_conditions", [])),
+            })
+
+        # Sort regions by risk level
+        sev_order = {"extreme": 4, "high": 3, "medium": 2, "low": 1}
+        for region in region_summary:
+            region_summary[region].sort(
+                key=lambda x: sev_order.get(x["severity"], 0), reverse=True)
+
+        result["region_report"] = {
+            "regions_affected": len(region_summary),
+            "by_region": region_summary,
+        }
+
+        # ── 3. Isolated convection signals ──
+        ff = next((h for h in hazards if h["hazard_type"] == "flash_flood"), None)
+        precip = indicators.get("daily_precip_total")
+
+        if precip is not None:
+            heavy_cells = int((precip >= 10).sum())
+            precip_max = float(np.nanmax(precip))
+
+            if heavy_cells > 0:
+                peak_idx = np.unravel_index(np.nanargmax(precip), precip.shape)
+                conv_lat = float(lat_vals[peak_idx[0]])
+                conv_lon = float(lon_vals[peak_idx[1]])
+
+                # Tag region for convection
+                conv_region = ToolDispatcher._tag_region(conv_lat, conv_lon)
+
+                result["isolated_convection"] = {
+                    "heavy_precip_cells": heavy_cells,
+                    "max_precip_mm": round(precip_max, 1),
+                    "hotspot_lat": round(conv_lat, 1),
+                    "hotspot_lon": round(conv_lon, 1),
+                    "region": conv_region,
+                    "flash_flood_triggered": ff.get("detected", False) if ff else False,
+                    "assessment": (
+                        f"检测到 {heavy_cells} 个格点日降水量 ≥10mm"
+                        f"（最大 {precip_max:.1f}mm，位于 {conv_region} "
+                        f"{conv_lat:.1f}N, {conv_lon:.1f}E）。"
+                    ),
+                }
+
+                if ff and not ff.get("detected"):
+                    result["isolated_convection"]["assessment"] += (
+                        "山洪综合检测未触发，但这些孤立强降水格点存在局地对流风险，"
+                        "尤其在阿西尔山脉陡峭地形区域可能引发局地山洪。"
+                    )
+
+        return result
+
+    # ═══════════════════════════════════════════════════════
+    # Composite risk scoring
+    # ═══════════════════════════════════════════════════════
+
+    @staticmethod
+    def _compute_composite_risk(hazards: list, indicators: dict,
+                                 lat_vals, lon_vals, region_calib: dict = None) -> dict:
+        """Compute multi-hazard composite risk from individual hazard scores."""
+        import numpy as np
+
+        detected_hazards = [h for h in hazards if h.get("detected")]
+        if len(detected_hazards) < 2:
+            return {
+                "composite_level": "无复合风险",
+                "overlapping_hazards": len(detected_hazards),
+                "note": "仅单一灾害触发或未检出，不存在复合叠加",
+            }
+
+        # Find overlap regions (grid cells where multiple hazards trigger)
+        # We use the hotspot proximity as a coarse proxy
+        overlap_pairs = []
+        composite_rules = region_calib.get("composite_risk", {}).get("rules", []) if region_calib else []
+        rule_map = {tuple(sorted(r["hazards"])): r for r in composite_rules}
+
+        # Check for overlapping hazards
+        hazard_names = sorted([h["hazard_type"] for h in detected_hazards])
+        hazards_key = tuple(hazard_names)
+
+        multiplier = 1.0
+        rule_note = ""
+        if hazards_key in rule_map:
+            r = rule_map[hazards_key]
+            multiplier = r["multiplier"]
+            rule_note = r["note"]
+        else:
+            # Check partial matches
+            for pair_key, r in rule_map.items():
+                if all(h in hazard_names for h in pair_key):
+                    multiplier = max(multiplier, r["multiplier"])
+                    rule_note = r["note"]
+
+        # Compute composite score
+        scores = [h["max_risk_score"] for h in detected_hazards]
+        avg_score = sum(scores) / len(scores)
+        composite_score = min(avg_score * multiplier, 1.0)
+
+        # Hotspot proximity analysis
+        hotspots = [(h["hotspot_lat"], h["hotspot_lon"], h["hazard_type"])
+                     for h in detected_hazards if "hotspot_lat" in h]
+        proximity_warning = ""
+        if len(hotspots) >= 2:
+            for i in range(len(hotspots)):
+                for j in range(i+1, len(hotspots)):
+                    dlat = hotspots[i][0] - hotspots[j][0]
+                    dlon = hotspots[i][1] - hotspots[j][1]
+                    dist_deg = np.sqrt(dlat**2 + dlon**2)
+                    if dist_deg < 5:  # within ~500km
+                        overlap_pairs.append({
+                            "hazard_a": hotspots[i][2],
+                            "hazard_b": hotspots[j][2],
+                            "distance_deg": round(float(dist_deg), 1),
+                        })
+        if overlap_pairs:
+            proximity_warning = f"{len(overlap_pairs)} 对灾害热点相邻（<5°），存在空间叠加风险"
+
+        composite_level = (
+            "extreme" if composite_score >= 0.8
+            else "high" if composite_score >= 0.6
+            else "medium" if composite_score >= 0.4
+            else "low"
+        )
+
+        return {
+            "composite_level": composite_level,
+            "composite_score": round(composite_score, 3),
+            "multiplier": multiplier,
+            "multiplier_rule": rule_note,
+            "overlapping_hazards": len(detected_hazards),
+            "hazard_types": [h["hazard_type"] for h in detected_hazards],
+            "hazard_scores": {h["hazard_type"]: h["max_risk_score"] for h in detected_hazards},
+            "hotspot_overlaps": overlap_pairs,
+            "proximity_warning": proximity_warning,
+        }
+
+    def _detect_composite_risk(self, args: dict) -> str:
+        """Detect composite multi-hazard risk for a forecast day."""
+        import os
+        forecast_day = args.get("forecast_day", 1)
+        hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+
+        # Run full detection with region calibration
+        result = self._detect_from_forecast({
+            "forecast_day": forecast_day,
+            "hazard_types": hazard_types,
+        })
+        data = json.loads(result)
+
+        composite = data.get("composite_risk", {})
+        if composite.get("overlapping_hazards", 0) < 2:
+            # Also check if single hazard with region calibration gives useful output
+            calibrated = data.get("region_calibrated", False)
 
         return json.dumps({
             "forecast_day": forecast_day,
-            "forecast_source": "ECMWF AIFS",
-            "results": results,
-            "note": "预报基于 AIFS 全球模型输出，存在不确定性。建议结合实时观测验证。"
+            "region_calibrated": data.get("region_calibrated", False),
+            "individual_hazards": [
+                {
+                    "hazard_type": h["hazard_type"],
+                    "severity": h.get("severity"),
+                    "score": h.get("max_risk_score"),
+                    "region": h.get("region"),
+                    "triggered_count": len(h.get("triggered_conditions", [])),
+                }
+                for h in data.get("hazards", [])
+            ],
+            "composite_risk": composite,
+            "analysis": (
+                f"复合风险等级: {composite.get('composite_level', 'N/A')} "
+                f"(评分 {composite.get('composite_score', 0):.3f})。"
+                f"触发灾害: {composite.get('hazard_types', [])}。"
+                f"{composite.get('multiplier_rule', '')}"
+                f"{composite.get('proximity_warning', '')}"
+            ),
         }, ensure_ascii=False, indent=2)
-
-    def _compare_models(self, args: dict) -> str:
-        """Multi-model comparison with KG-based physical consistency check."""
-        import numpy as np, xarray as xr, os
-
-        day = args.get("forecast_day", 1)
-        variable = args.get("variable", "t2m")
-        project_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # Load both forecasts
-        fcn_path = os.path.join(project_dir, "forecast", "fcn_forecast.nc")
-        aifs_path = os.path.join(project_dir, "forecast", f"saudi_forecast_d{day:02d}.nc")
-
-        result = {"forecast_day": day, "variable": variable, "models": {}}
-
-        # --- FCN ---
-        if os.path.exists(fcn_path):
-            f = xr.open_dataset(fcn_path)
-            if variable == "t2m" and "t2m" in f.variables:
-                # Use lead_time=12h for afternoon peak
-                fcn_val = f["t2m"].values[0, 2] - 273.15
-                result["models"]["fcn"] = {
-                    "mean": round(float(np.nanmean(fcn_val)), 1),
-                    "max": round(float(np.nanmax(fcn_val)), 1),
-                    "min": round(float(np.nanmin(fcn_val)), 1),
-                    "note": "取12h预报(午后峰值)"
-                }
-            f.close()
-
-        # --- AIFS ---
-        if os.path.exists(aifs_path):
-            a = xr.open_dataset(aifs_path)
-            var_map = {"t2m": "t2m", "tp": "tp", "wind": "u10"}
-            av = var_map.get(variable, "t2m")
-            if av in a.variables:
-                aifs_val = a[av].values
-                if av == "t2m":
-                    aifs_val = aifs_val - 273.15
-                result["models"]["aifs"] = {
-                    "mean": round(float(np.nanmean(aifs_val)), 1),
-                    "max": round(float(np.nanmax(aifs_val)), 1),
-                    "min": round(float(np.nanmin(aifs_val)), 1),
-                }
-            a.close()
-
-        # --- KG arbitration ---
-        if "fcn" in result["models"] and "aifs" in result["models"]:
-            fcn_m = result["models"]["fcn"]["mean"]
-            aifs_m = result["models"]["aifs"]["mean"]
-            diff = round(abs(fcn_m - aifs_m), 1)
-
-            # KG check: compare against climatology
-            with open(os.path.join(project_dir, "schema", "operators.json"), "r", encoding="utf-8") as fp:
-                ops = json.load(fp)
-            t2m_op = next((o for o in ops["operators"] if o["id"] == "t2m_c"), {})
-
-            if diff > 3:
-                result["arbitration"] = {
-                    "verdict": "模型分歧显著",
-                    "diff_celsius": diff,
-                    "confidence": "medium",
-                    "recommendation": f"FCN 预报偏高 {diff}°C，两模型不一致。建议关注 KG 中 vpd_kpa(干燥度) 和 dewpoint_depression_c(露点差) 是否也偏高——如果都偏高则 FCN 更可信（沙漠极端高温信号），否则 AIFS 保守值更安全。",
-                    "kg_evidence": "t2m 气候态表明沙特 7 月均值 33-43°C，需结合 t2m_anomaly_c 判断异常程度。"
-                }
-            else:
-                result["arbitration"] = {
-                    "verdict": "两模型一致",
-                    "diff_celsius": diff,
-                    "confidence": "high",
-                    "recommendation": f"FCN 和 AIFS 预报差异仅 {diff}°C，可采信。可进一步查询该区域气候态确认是否异常。"
-                }
-
-        return json.dumps(result, ensure_ascii=False, indent=2)
 
     def _get(self, path):
         r = self.requests.get(f"{self.api_base}{path}")

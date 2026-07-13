@@ -1,0 +1,127 @@
+{
+  "meta": {
+    "description": "沙特六大地理分区灾害检测阈值校准。通用阈值来自 rules.json，本文件定义各区域相对于通用阈值的偏移量。正值=放宽阈值(更难触发)，负值=收紧阈值(更易触发)。",
+    "version": "1.0.0"
+  },
+  "regions": {
+    "central_desert": {
+      "label": "中部沙漠(利雅得)",
+      "lat": [21.0, 28.0],
+      "lon": [40.0, 48.0],
+      "calibration": {
+        "extreme_heat": {
+          "tmax_c": {"threshold_offset": 3, "note": "沙漠自然高温基线高，42→45°C才触发"},
+          "dewpoint_depression_c": {"threshold_offset": 5, "note": "沙漠大气本就干燥，15→20°C"}
+        },
+        "dust_storm": {
+          "wind10_speed": {"threshold_offset": -2, "note": "松软沙土更易起尘，12→10 m/s"}
+        }
+      }
+    },
+    "empty_quarter": {
+      "label": "鲁布哈利沙漠",
+      "lat": [17.0, 23.0],
+      "lon": [45.0, 56.0],
+      "calibration": {
+        "extreme_heat": {
+          "tmax_c": {"threshold_offset": 5, "note": "世界最热沙漠，42→47°C才触发"},
+          "dewpoint_depression_c": {"threshold_offset": 10, "note": "极度干燥，15→25°C"}
+        },
+        "dust_storm": {
+          "wind10_speed": {"threshold_offset": -2, "note": "世界最大连续沙体，10 m/s即可起沙"}
+        }
+      }
+    },
+    "red_sea": {
+      "label": "红海沿岸",
+      "lat": [16.0, 30.0],
+      "lon": [34.0, 44.0],
+      "calibration": {
+        "extreme_heat": {
+          "tmax_c": {"threshold_offset": -2, "note": "沿海高湿使体感温度更高，42→40°C"},
+          "dewpoint_depression_c": {"threshold_offset": -5, "note": "沿海湿度大，露点差偏低，15→10°C"}
+        },
+        "flash_flood": {
+          "daily_precip_total": {"threshold_offset": -5, "note": "地形抬升降水集中，10→5mm"},
+          "pwat": {"threshold_offset": -5, "note": "红海水汽供应充足，30→25 kg/m²"}
+        },
+        "coastal_humid_heat": {
+          "t2m_c": {"threshold_offset": -2, "note": "湿热体感温度高，30→28°C"},
+          "rh2m": {"threshold_offset": -5, "note": "红海蒸发强，60→55%"}
+        }
+      }
+    },
+    "persian_gulf": {
+      "label": "波斯湾沿岸",
+      "lat": [24.0, 30.0],
+      "lon": [48.0, 56.0],
+      "calibration": {
+        "extreme_heat": {
+          "tmax_c": {"threshold_offset": 0, "note": "维持通用42°C"},
+          "dewpoint_depression_c": {"threshold_offset": 0, "note": "维持通用15°C"}
+        },
+        "dust_storm": {
+          "wind10_speed": {"threshold_offset": 0, "note": "Shamal风区，维持通用12 m/s"}
+        },
+        "coastal_humid_heat": {
+          "t2m_c": {"threshold_offset": 0, "note": "维持通用30°C"},
+          "rh2m": {"threshold_offset": -5, "note": "波斯湾蒸发强，60→55%"}
+        }
+      }
+    },
+    "north": {
+      "label": "北部(塔布克/焦夫)",
+      "lat": [28.0, 32.0],
+      "lon": [34.0, 48.0],
+      "calibration": {
+        "extreme_heat": {
+          "tmax_c": {"threshold_offset": -2, "note": "北部夏季温度略低，42→40°C"}
+        }
+      }
+    },
+    "south_asir": {
+      "label": "南部阿西尔山脉",
+      "lat": [16.0, 21.0],
+      "lon": [40.0, 46.0],
+      "calibration": {
+        "extreme_heat": {
+          "tmax_c": {"threshold_offset": -6, "note": "高海拔凉爽基线，42→36°C"}
+        },
+        "flash_flood": {
+          "daily_precip_total": {"threshold_offset": -7, "note": "陡峭地形+地形雨，10→3mm即可能山洪"},
+          "pwat": {"threshold_offset": -10, "note": "对流环境水汽充沛，30→20 kg/m²"}
+        }
+      }
+    }
+  },
+
+  "composite_risk": {
+    "description": "复合灾害叠加规则——当同一格点同时触发多种灾害时的风险加权方式",
+    "rules": [
+      {
+        "name": "高温+沙尘叠加",
+        "hazards": ["extreme_heat", "dust_storm"],
+        "multiplier": 1.3,
+        "note": "干热+强风+起尘→户外作业极度危险"
+      },
+      {
+        "name": "高温+高湿叠加",
+        "hazards": ["extreme_heat", "coastal_humid_heat"],
+        "multiplier": 1.5,
+        "note": "高温+高湿=致命体感温度，热射病高风险"
+      },
+      {
+        "name": "强降水+强风叠加",
+        "hazards": ["flash_flood", "dust_storm"],
+        "multiplier": 1.2,
+        "note": "暴雨+泥石流风险+风驱雨"
+      },
+      {
+        "name": "三重叠加",
+        "hazards": ["extreme_heat", "dust_storm", "flash_flood"],
+        "multiplier": 1.8,
+        "note": "极端复合事件，需最高级别预警"
+      }
+    ]
+  }
+}

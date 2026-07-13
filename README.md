@@ -1,30 +1,27 @@
-# Saudi Extreme Event Knowledge Graph
+# MAZU 沙特多灾种早期预警智能体
 
-MAZU 多灾种早期预警系统 — 沙特极端气候事件知识图谱。
-
-基于 91 个专家定义的极端事件指标算子，构建可嵌入 MAZU 系统的轻量化知识图谱。支持山洪、极端高温、沙尘强风、沿海湿热四类灾害的智能检测与可解释推理。
-
-## 架构
-
-```
-schema/          ← 知识定义（本体 + 91个算子 + 4条检测规则）
-kg/              ← 引擎（networkx 图 + DAG 解释器 + xarray 数据层 + 事件检测）
-dashboard/       ← Web 交互界面（Flask + vis-network）
-verify.py        ← 5项集成验证
-```
+MAZU 系列早期预警系统 — 沙特阿拉伯本地化多灾种智能预警算法。基于 KnowWhereGraph (DMDO-OWL) 知识图谱 + NVIDIA FourCastNet AI 预报 + DeepSeek-V3 LLM Agent。
 
 ## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-pip install networkx xarray netCDF4 numpy pandas scipy flask
+pip install -r requirements.txt
 ```
 
-### 2. 准备数据
+### 2. 配置 API Key
 
-将 365 个 NetCDF 指标文件放入 `indicators/` 目录：
+```bash
+cp .env.example .env
+# 编辑 .env，填入 DeepSeek API Key
+```
 
+### 3. 准备数据
+
+**知识图谱数据**（约 5GB，365 个 NetCDF 文件）：
+
+将指标文件放入 `indicators/` 目录：
 ```
 indicators/
 ├── saudi_indicators_20250101.nc
@@ -33,97 +30,103 @@ indicators/
 └── saudi_indicators_20251231.nc
 ```
 
-> 数据文件约 5GB，不包含在 Git 仓库中。文件命名格式：`saudi_indicators_YYYYMMDD.nc`
-
-### 3. 运行验证
+**预报数据**（在 WSL2 中生成）：
 
 ```bash
-python verify.py
+# WSL2 Ubuntu: conda activate earth2
+cd /mnt/f/Saudi
+python run_fcn.py --days 7
+# 输出: forecast/fcn_forecast.nc (~3MB)
 ```
 
-预期输出：
-
-```
-[PASS] 1_kg_construction
-[PASS] 2_flash_flood       # 2025-08-19 山洪检测
-[PASS] 3_extreme_heat       # 2025-07-25 高温检测
-[PASS] 4_quiet_day          # 静默日零误报
-[PASS] 5_operator_chain     # 算子链完整性
-5/5 tests passed
-```
-
-### 4. 启动仪表盘
+### 4. 启动系统
 
 ```bash
+# 终端 1: 知识图谱 API
 python dashboard/server.py
+
+# 终端 2: Agent Web 界面
+streamlit run app.py
 ```
 
-打开 **http://127.0.0.1:5000**，交互式可视化知识图谱：
+打开 **http://127.0.0.1:8501** 开始使用。
 
-- 点击任意节点 → 查看关系 / 计算公式 / DAG / 推导链
-- 搜索框 → 快速定位指标
-- 底部检测面板 → 输入日期运行事件检测
-
-### 5. 命令行查询
+### 5. 命令行模式（可选）
 
 ```bash
-python -m kg.query --date 2025-08-19 --hazard flash_flood --explain
+python agent.py
 ```
 
 ## 项目结构
 
-| 文件 | 说明 |
+```
+schema/                          # 知识定义
+├── ontology.json                # 5 节点类型 + 7 边类型
+├── operators.json               # 91 指标 DAG 表达式 + 数据来源
+├── rules.json                   # 4 灾害检测规则（权重/因果角色/fallback）
+└── region_calibration.json      # 六大区域阈值偏移量
+
+kg/                              # 知识图谱引擎
+├── owl/
+│   ├── to_rdf.py                # RDF 三元组构建 (7,801 triples)
+│   └── sparql_queries.py        # 10 类 SPARQL 查询
+├── event_detector.py            # 历史事件检测（加权 + 连通域）
+└── datalayer.py                 # xarray + LRU cache
+
+dashboard/                       # Web 服务
+├── server.py                    # Flask API（12 个端点）
+└── templates/
+    └── index_sparql.html        # KG 可视化界面
+
+agent.py                         # DeepSeek-V3 Agent (CLI)
+agent_tools.py                   # 15 个 Function Calling 工具 + FCN 预报引擎
+app.py                           # Streamlit Web 界面
+run_fcn.py                       # FourCastNet 预报脚本 (WSL2)
+learn_weights.py                 # L1 逻辑回归权重学习
+```
+
+## 能力矩阵（15 个工具）
+
+### 知识查询
+| 工具 | 说明 |
 |---|---|
-| `schema/ontology.json` | 5 类节点 + 7 类关系定义 |
-| `schema/operators.json` | 91 个指标的物理公式 + 可执行 DAG |
-| `schema/rules.json` | 4 类灾害检测规则（加权 + fallback + 连通域） |
-| `kg/ontology.py` | networkx 图构建，111 节点，428 边 |
-| `kg/operators.py` | OPS 词汇表（16 操作符）+ DAG 解释器 |
-| `kg/datalayer.py` | xarray 封装 + LRU 缓存 (maxsize=7) |
-| `kg/event_detector.py` | 加权评分 + primary gate + 连通域 + fallback |
-| `kg/query.py` | 三层查询入口（知识 / 数据 / 联合） |
+| `query_hazard_indicators` | 查询灾害依赖的指标列表 |
+| `query_indicator_detail` | 指标物理定义 + DAG + 数据源 |
+| `query_indicator_chain` | 指标推导链追溯 |
+| `search_indicators` | 关键词搜索指标 |
+| `query_rule_detail` | 检测规则完整条件 |
 
-## 知识图谱统计
-
-| 指标 | 值 |
+### 时空推理
+| 工具 | 说明 |
 |---|---|
-| 总节点 | 111 |
-| Indicator 节点 | 91 |
-| DataSource 节点 | 6 (DS1/DS2/DS4/DS8/DS10/SST) |
-| HazardType 节点 | 4 |
-| Rule 节点 | 4 |
-| Region 节点 | 6 |
-| 总边数 | 428 |
-| derived_from | 42 |
-| co_occurs_with | 264 |
-| sourced_from | 101 |
-| contributes_to | 17 |
-| detects | 4 |
+| `query_observations_nearby` | GeoSPARQL 半径空间搜索 |
+| `query_events_in_region` | 区域历史事件查询 |
+| `query_event_timeline` | OWL-Time 时间线 |
+| `query_cascading_chain` | 灾害级联链 |
+| `query_provenance` | PROV-O 数据溯源 |
 
-## 四类灾害检测
+### 事件检测
+| 工具 | 说明 |
+|---|---|
+| `detect_extreme_events` | 历史事件检测 (ERA5) |
+| `detect_future_events` | FCN 单日预报 + KG 验证 + 区域标注 |
+| `detect_forecast_sequence` | 批量 1-7 天趋势分析 |
+| `detect_composite_risk` | 复合灾害叠加评分 |
+| `compare_with_history` | 2025 年同期对比 |
 
-| 灾害 | 条件数 | Primary Gate | Fallback |
-|---|---|---|---|
-| 山洪 (flash_flood) | 5 | flash_flood_risk ≥ 3 | ds10_max_1h 缺失 → 降权重 |
-| 极端高温 (extreme_heat) | 4 | heatwave_day_flag ≥ 1 | 无 |
-| 沙尘强风 (dust_storm) | 4 | wind10_speed ≥ 12 m/s | wind_shear_850_200 缺失 → 降权重 |
-| 沿海湿热 (coastal_humid_heat) | 4 | sst_celsius ≥ 30°C | 无 |
+## 四类灾害
 
-## 验证结果
-
-| 测试 | 日期 | 结果 |
+| 灾害 | 检测条件 | 关键机理 |
 |---|---|---|
-| 山洪检测 | 2025-08-19 | ✅ 9 事件，最大集群 57 格点，红海沿岸 |
-| 极端高温 | 2025-07-25 | ✅ 16 事件，最大 2050 格点 (~218K km²) |
-| 静默日 | 2025-01-15 | ✅ 0 事件 — 零误报 |
-| 算子链 | — | ✅ 全部可追溯到数据源 |
-| KG 验证 | — | ✅ 无孤立节点，无循环依赖 |
+| 山洪 | 降水 + 水汽辐合 + 可降水量 | 红海地形抬升对流 |
+| 极端高温 | 温度 + 露点差 + 持续时间 | 区域校准阈值 |
+| 沙尘强风 | 风速 + 干燥度 + Shamal 风向 | 波斯湾传播路径 |
+| 沿海湿热 | 温度 + 湿度 + 海温 | 红海/波斯湾沿岸 |
+
+## 区域校准
+
+六大地理分区独立阈值：鲁布哈利沙漠高温 47°C 触发、红海沿岸 40°C、阿西尔山脉 36°C。详见 `schema/region_calibration.json`。
 
 ## 技术栈
 
-networkx · xarray · numpy · scipy · Flask · vis-network · NetCDF4
-
-## 相关文档
-
-- [沙特极端事件知识图谱构建方案](沙特极端事件知识图谱构建方案.md)
-- [指标计算与分布洞察报告](saudi_extreme_event_indicator_report.md)
+Python · DeepSeek-V3 · FourCastNet · Streamlit · Flask · rdflib · xarray · NumPy · SciPy
