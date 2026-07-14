@@ -23,25 +23,36 @@ def run(days: int = 7, init_time: str = None):
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # ── 1. 初始化时间 ──
-    if init_time:
-        t0 = np.datetime64(init_time)
-    else:
-        # 自动取今天 00Z（GFS 四个时次 00/06/12/18Z 中取最近的 00Z）
-        today = datetime.date.today()
-        t0 = np.datetime64(today.isoformat() + "T00:00")
-    print(f"初始化时间: {t0}")
+    # ── 1. 数据源与初始化时间 ──
+    print("连接 GFS 数据源...")
+    data = GFS()
+
+    # 尝试获取最新可用 GFS 时次（中国访问 AWS 可能失败）
+    t0 = None
+    try:
+        available = sorted(data.available_times())
+        if available:
+            t0 = available[-1]
+            print(f"最新 GFS 时次: {t0}")
+    except Exception as e:
+        print(f"获取 GFS 时次列表失败: {e}")
+
+    if t0 is None:
+        # 降级策略：用户指定的时间 → 今天 00Z → 已知可用的时间
+        if init_time:
+            t0 = np.datetime64(init_time)
+        else:
+            today = datetime.date.today()
+            t0 = np.datetime64(today.isoformat() + "T00:00")
+        print(f"使用初始化时间: {t0}（需确保该时次 GFS 数据在 AWS 上可用）")
+        print(f"  如果报 FileNotFoundError，尝试: python run_fcn.py --init 2026-07-10")
 
     # ── 2. 模型 ──
     print("加载 FourCastNet...")
     model = FCN.load_model(FCN.load_default_package())
     print(f"  输入变量: {len(model.input_coords()['variable'])} 个")
 
-    # ── 3. 数据 ──
-    print("连接 GFS 数据源（自动下载最新分析场）...")
-    data = GFS()
-
-    # ── 4. 输出坐标（仅沙特区域，0.25°） ──
+    # ── 3. 输出坐标（仅沙特区域，0.25°） ──
     out_coords = OrderedDict({
         "lat": np.arange(SAUDI_LAT[0], SAUDI_LAT[1] + 0.25, 0.25),
         "lon": np.arange(SAUDI_LON[0], SAUDI_LON[1] + 0.25, 0.25),
