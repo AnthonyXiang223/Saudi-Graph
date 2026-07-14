@@ -619,6 +619,8 @@ class ToolDispatcher:
             ref_arr = list(indicators.values())[0]
             score = np.zeros(ref_arr.shape, dtype=float)
             total_w = 0.0
+            all_conds = len(rule["conditions"])  # total conditions in rule
+            available_n = len(available_conds)
             triggered = []
 
             for cond in available_conds:
@@ -635,22 +637,24 @@ class ToolDispatcher:
                 th_map = ToolDispatcher._build_region_threshold_map(
                     lat_vals, lon_vals, region_calib, htype, ind_id, base_th)
 
-                if op == ">=":
-                    hit = data >= th_map
-                elif op == ">":
-                    hit = data > th_map
-                elif op == "<":
-                    hit = data < th_map
-                elif op == "<=":
+                if op in (">=", ">"):
+                    # Intensity scaling: how far beyond threshold relative to threshold
+                    # e.g. precip=50mm vs th=10mm → exceedance=4 → capped at 1.0
+                    exceedance = np.clip((data - th_map) / (np.abs(th_map) * 0.5 + 1e-6), 0.0, 1.0)
+                    hit = exceedance >= 0.0
+                    contribution = w * exceedance  # partial score based on intensity
+                elif op in ("<", "<="):
+                    # For "less than" conditions, reverse: below threshold = higher score
+                    margin = np.clip((th_map - data) / (np.abs(th_map) * 0.5 + 1e-6), 0.0, 1.0)
+                    contribution = w * margin
                     hit = data <= th_map
                 else:
                     continue
 
-                score += w * hit.astype(float)
+                score += contribution
                 total_w += w
-                n_hit = int(hit.sum())
+                n_hit = int((exceedance > 0.3).sum() if op in (">=", ">") else (margin > 0.3).sum())
                 peak = float(np.nanmax(data))
-                # Report calibrated threshold range
                 th_min, th_max = float(th_map.min()), float(th_map.max())
                 th_str = f"{op} {base_th}" if th_min == th_max else f"{op} {th_min:.0f}-{th_max:.0f}(区域校准)"
                 if n_hit > 0:
@@ -666,7 +670,14 @@ class ToolDispatcher:
             if total_w > 0:
                 score = score / total_w
 
-            # Primary gate (also region-calibrated)
+            # Coverage penalty: partially available indicators → cap max score
+            coverage_ratio = available_n / all_conds if all_conds > 0 else 1.0
+            if coverage_ratio < 1.0:
+                # Soft penalty: score * sqrt(coverage) so 3/6 → 0.707 not 0.5
+                coverage_penalty = np.sqrt(coverage_ratio)
+                score = score * coverage_penalty
+
+            # Primary gate (region-calibrated, or absent-penalty)
             primary_cond = next((c for c in rule["conditions"] if c.get("primary")), None)
             if primary_cond and primary_cond["indicator"] in indicators:
                 pdata = indicators[primary_cond["indicator"]]
@@ -676,9 +687,12 @@ class ToolDispatcher:
                         primary_cond["indicator"], primary_cond["value"])
                     pmask = pdata >= pth_map
                     score = np.where(pmask, score, score * 0.25)
+            elif primary_cond:
+                # Primary gate unavailable → confidence penalty
+                score = score * 0.7
 
             max_score = float(np.nanmax(score))
-            n_risky = int((score >= 0.3).sum())
+            n_risky = int((score >= 0.2).sum())
 
             if np.isfinite(max_score):
                 peak_idx = np.unravel_index(np.nanargmax(score), score.shape)
@@ -687,8 +701,8 @@ class ToolDispatcher:
             else:
                 risky_lat = risky_lon = 0.0
 
-            sev = ("extreme" if max_score >= 0.8 else "high" if max_score >= 0.6
-                   else "medium" if max_score >= 0.3 else "low")
+            sev = ("extreme" if max_score >= 0.6 else "high" if max_score >= 0.4
+                   else "medium" if max_score >= 0.2 else "low")
 
             results.append({
                 "hazard_type": htype,
