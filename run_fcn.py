@@ -23,29 +23,27 @@ def run(days: int = 7, init_time: str = None):
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # ── 1. 数据源与初始化时间 ──
+    # ── 1. 数据源与候选初始化时间（自动回退） ──
     print("连接 GFS 数据源...")
     data = GFS()
 
-    # 尝试获取最新可用 GFS 时次（中国访问 AWS 可能失败）
-    t0 = None
-    try:
-        available = sorted(data.available_times())
-        if available:
-            t0 = available[-1]
-            print(f"最新 GFS 时次: {t0}")
-    except Exception as e:
-        print(f"获取 GFS 时次列表失败: {e}")
+    # 候选时间列表：用户指定 → 昨天18Z → 昨天12Z → 前天的四个时次 → 已知可用
+    today = datetime.date.today()
+    yesterday = today - datetime.timedelta(days=1)
+    day_before = today - datetime.timedelta(days=2)
 
-    if t0 is None:
-        # 降级策略：用户指定的时间 → 今天 00Z → 已知可用的时间
-        if init_time:
-            t0 = np.datetime64(init_time)
-        else:
-            today = datetime.date.today()
-            t0 = np.datetime64(today.isoformat() + "T00:00")
-        print(f"使用初始化时间: {t0}（需确保该时次 GFS 数据在 AWS 上可用）")
-        print(f"  如果报 FileNotFoundError，尝试: python run_fcn.py --init 2026-07-10")
+    candidates = []
+    if init_time:
+        candidates.append(np.datetime64(init_time))
+    # 从近到远排列 GFS 时次（AWS 上新数据可能延迟几小时）
+    for date in [yesterday, day_before]:
+        for hour in ["18", "12", "06", "00"]:
+            candidates.append(np.datetime64(date.isoformat() + f"T{hour}:00"))
+    # 终极后备
+    candidates.append(np.datetime64("2026-07-10T00:00"))
+
+    t0 = candidates[0]
+    print(f"尝试 GFS 时次: {t0}（共 {len(candidates)} 个候选）")
 
     # ── 2. 模型 ──
     print("加载 FourCastNet...")
@@ -62,21 +60,46 @@ def run(days: int = 7, init_time: str = None):
     out_path = os.path.join(OUT_DIR, "fcn_forecast.nc")
     io = NetCDF4Backend(out_path)
 
-    # ── 6. 运行 ──
+    # ── 6. 运行（自动回退到可用时次） ──
     nsteps = days * 4
-    times = [t0]
 
-    print(f"\nFourCastNet 预报: {nsteps} 步 = {days} 天, 沙特区域")
-    print(f"  GPU: RTX 4060")
+    for i, t_candidate in enumerate(candidates):
+        times = [t_candidate]
+        try:
+            print(f"\nFourCastNet 预报 [{i+1}/{len(candidates)}]: "
+                  f"{nsteps} 步 = {days} 天, 初始化 {t_candidate}")
+            print(f"  GPU: RTX 4060")
 
-    io = deterministic(
-        time=times,
-        nsteps=nsteps,
-        prognostic=model,
-        data=data,
-        io=io,
-        output_coords=out_coords,
-    )
+            io = deterministic(
+                time=times,
+                nsteps=nsteps,
+                prognostic=model,
+                data=data,
+                io=io,
+                output_coords=out_coords,
+            )
+            t0 = t_candidate  # success
+            print(f"成功！使用 GFS 时次: {t0}")
+            break
+
+        except FileNotFoundError:
+            if i + 1 < len(candidates):
+                print(f"  GFS 数据 {t_candidate} 不可用，尝试下一候选...")
+                # Re-create IO backend (it was partially written)
+                import earth2studio.io
+                io = earth2studio.io.NetCDF4Backend(out_path)
+            else:
+                raise
+        except Exception as e:
+            if "NoSuchKey" in str(e) or "does not exist" in str(e):
+                if i + 1 < len(candidates):
+                    print(f"  GFS {t_candidate} 不存在于 AWS，尝试下一候选...")
+                    import earth2studio.io
+                    io = earth2studio.io.NetCDF4Backend(out_path)
+                else:
+                    raise
+            else:
+                raise
 
     # 标记初始化时间到文件属性
     ds = xr.open_dataset(out_path)
