@@ -56,8 +56,14 @@ def run(days: int = 7, init_time: str = None):
         "lon": np.arange(SAUDI_LON[0], SAUDI_LON[1] + 0.25, 0.25),
     })
 
-    # ── 5. IO ──
+    # ── 5. IO（删除旧文件避免维度冲突） ──
     out_path = os.path.join(OUT_DIR, "fcn_forecast.nc")
+    if os.path.exists(out_path):
+        backup = out_path.replace(".nc", f"_backup_{datetime.date.today().isoformat()}.nc")
+        if os.path.exists(backup):
+            os.remove(backup)
+        os.rename(out_path, backup)
+        print(f"旧预报已备份: {os.path.basename(backup)}")
     io = NetCDF4Backend(out_path)
 
     # ── 6. 运行（自动回退到可用时次） ──
