@@ -291,6 +291,25 @@ TOOLS = [
     # ═══════════════════════════════════════════════════
     # Raw Indicator Value Query (validation / accuracy check)
     # ═══════════════════════════════════════════════════
+    # City Weather (city → nearest grid cell → all indicators)
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "get_city_weather",
+            "description": "获取指定城市在指定预报日的所有气象指标格点值。根据城市坐标找到最近的FCN网格点，返回温度、湿度、风、降水等可用指标的实际数值。适用于'利雅得今天多少度''吉达的湿度是多少'等问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "城市名称，中文或英文，如 利雅得、吉达、达曼"},
+                    "forecast_day": {"type": "integer", "description": "预报天数偏移，1=明天，默认1"}
+                },
+                "required": ["city"]
+            }
+        }
+    },
+
+    # ═══════════════════════════════════════════════════
     # City Lookup (Saudi city → coordinates)
     # ═══════════════════════════════════════════════════
     {
@@ -417,6 +436,9 @@ class ToolDispatcher:
             elif tool_name == "compare_with_history":
                 return self._compare_with_history(arguments)
 
+
+            elif tool_name == "get_city_weather":
+                return self._get_city_weather(arguments)
 
             elif tool_name == "lookup_city":
                 return self._lookup_city_tool(arguments)
@@ -1209,6 +1231,68 @@ class ToolDispatcher:
             "note": f"对比 2026 年 FCN 预报 vs 2025 年 ERA5 再分析检测。注意：数据源不同（预报 vs 再分析），对比结果反映相对异常程度，非严格同源对比。",
         }, ensure_ascii=False, indent=2)
 
+    def _get_city_weather(self, args: dict) -> str:
+        """Read all FCN indicators at the nearest grid cell to a city."""
+        import os, numpy as np
+
+        city_name = args.get("city", "")
+        forecast_day = args.get("forecast_day", 1)
+        city = self._lookup_city(city_name)
+
+        if not city:
+            return json.dumps({
+                "error": f"未找到城市: {city_name}",
+                "hint": "使用 lookup_city 查看可用城市列表",
+            }, ensure_ascii=False)
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        fcn_path = os.path.join(project_dir, "forecast", "fcn_forecast.nc")
+        if not os.path.exists(fcn_path):
+            return json.dumps({"error": "FCN 预报文件不存在"}, ensure_ascii=False)
+
+        fcn_data = self._load_indicators_fcn(fcn_path, forecast_day)
+        ind = fcn_data["indicators"]
+        lat = fcn_data["lat"]
+        lon = fcn_data["lon"]
+
+        # Nearest grid cell
+        d2 = np.sqrt((lat[:, None] - city["lat"])**2 +
+                     (lon[None, :] - city["lon"])**2)
+        ni, nj = np.unravel_index(np.argmin(d2), d2.shape)
+        dist_km = round(float(d2[ni, nj] * 111.0), 1)
+
+        # Read values
+        values = {}
+        for ind_id, arr in sorted(ind.items()):
+            values[ind_id] = round(float(arr[ni, nj]), 2)
+
+        # Group
+        cats = {
+            "温度": ["t2m_c", "tmax_c"],
+            "湿度": ["rh2m", "dewpoint_depression_c", "specific_humidity_850"],
+            "风": ["wind10_speed", "wind_direction", "wind_shear_850_200"],
+            "降水": ["daily_precip_total", "pwat", "ivt_convergence"],
+            "气压": ["sp"],
+        }
+        grouped = {}
+        for cat, ids in cats.items():
+            grouped[cat] = {i: values[i] for i in ids if i in values}
+        other = {k: v for k, v in values.items() if k not in sum(cats.values(), [])}
+        if other:
+            grouped["其他"] = other
+
+        return json.dumps({
+            "city": city["label"],
+            "city_coords": f"({city['lat']}N, {city['lon']}E)",
+            "nearest_grid": f"({float(lat[ni]):.1f}N, {float(lon[nj]):.1f}E)",
+            "grid_distance_km": dist_km,
+            "forecast_day": forecast_day,
+            "lead_time_h": fcn_data.get("lead_time_h", "?"),
+            "values": grouped,
+            "note": "FCN 网格预报值，0.25°分辨率，未经过地面站点订正",
+        }, ensure_ascii=False, indent=2)
+
+    def _lookup_city_tool(self, args: dict) -> str:
         """Lookup city coordinates for the agent."""
         city_name = args.get("city", "")
         city = self._lookup_city(city_name)
@@ -1219,9 +1303,8 @@ class ToolDispatcher:
                 "lat": city["lat"],
                 "lon": city["lon"],
                 "region": self.SAUDI_REGIONS.get(city.get("region", ""), {}).get("label", ""),
-                "hint": f"使用 query_observations_nearby(lat={city['lat']}, lon={city['lon']}, radius_km=50) 查询该城市周边数据。",
+                "hint": f"使用 get_city_weather 或 query_observations_nearby 查询该城市数据。",
             }, ensure_ascii=False, indent=2)
-        # Fuzzy list all cities
         all_cities = [f'{c["label"]}({cid})' for cid, c in self.SAUDI_CITIES.items()]
         return json.dumps({
             "found": False,
