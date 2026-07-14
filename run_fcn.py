@@ -56,11 +56,18 @@ def run(days: int = 7, init_time: str = None):
         "lon": np.arange(SAUDI_LON[0], SAUDI_LON[1] + 0.25, 0.25),
     })
 
-    # ── 5. IO（删除旧文件避免维度冲突） ──
-    out_path = os.path.join(OUT_DIR, "fcn_forecast.nc")
+    # ── 5. IO（按初始化日期命名，避免互相覆盖） ──
+    init_date_str = str(t0)[:10].replace("-", "")
+    out_path = os.path.join(OUT_DIR, f"fcn_{init_date_str}.nc")
     if os.path.exists(out_path):
         os.remove(out_path)
+    # 同时更新 latest 符号链接，agent 始终读取最新文件
+    latest_path = os.path.join(OUT_DIR, "fcn_forecast.nc")
+    if os.path.exists(latest_path):
+        os.remove(latest_path)
     io = NetCDF4Backend(out_path)
+
+    print(f"输出: {os.path.basename(out_path)}")
 
     # ── 6. 运行（自动回退到可用时次） ──
     nsteps = days * 4
@@ -109,8 +116,12 @@ def run(days: int = 7, init_time: str = None):
     ds.attrs["fcn_run_time"] = datetime.datetime.now().isoformat()
     ds.close()
 
-    print(f"\n完成。输出: {out_path}")
-    print(f"下次更新: 明天运行 python run_fcn.py --days 7")
+    # 同时更新 latest 副本，Agent 始终读 fcn_forecast.nc
+    import shutil
+    shutil.copy2(out_path, latest_path)
+
+    print(f"\n完成。输出: {out_path} (→ {os.path.basename(latest_path)})")
+    print(f"下次更新: python run_fcn.py --days 7")
 
 
 def main():
