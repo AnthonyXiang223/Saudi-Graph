@@ -289,6 +289,26 @@ TOOLS = [
     },
 
     # ═══════════════════════════════════════════════════
+    # Raw Indicator Value Query (validation / accuracy check)
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "query_indicator_value",
+            "description": "读取指定日期、指定指标的原始网格数值（min/max/mean/P95）和空间分布概要。用于验证检测结果是否与原始数据一致。需要 indicators/ 目录有对应日期的 NetCDF 文件。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "indicator": {"type": "string", "description": "指标ID，如 tmax_c, daily_precip_total"},
+                    "date": {"type": "string", "description": "日期 YYYYMMDD，如 20250819"},
+                    "threshold": {"type": "number", "description": "可选，统计超过该阈值的格点数和位置"}
+                },
+                "required": ["indicator", "date"]
+            }
+        }
+    },
+
+    # ═══════════════════════════════════════════════════
     # City Lookup (Saudi city → coordinates)
     # ═══════════════════════════════════════════════════
     {
@@ -414,6 +434,9 @@ class ToolDispatcher:
 
             elif tool_name == "compare_with_history":
                 return self._compare_with_history(arguments)
+
+            elif tool_name == "query_indicator_value":
+                return self._query_indicator_value(arguments)
 
             elif tool_name == "lookup_city":
                 return self._lookup_city_tool(arguments)
@@ -1205,6 +1228,90 @@ class ToolDispatcher:
             "comparison": comparison,
             "note": f"对比 2026 年 FCN 预报 vs 2025 年 ERA5 再分析检测。注意：数据源不同（预报 vs 再分析），对比结果反映相对异常程度，非严格同源对比。",
         }, ensure_ascii=False, indent=2)
+
+    def _query_indicator_value(self, args: dict) -> str:
+        """Read raw indicator values from NetCDF for validation."""
+        import os, numpy as np, xarray as xr
+
+        ind_id = args.get("indicator", "")
+        date_str = args.get("date", "")
+        threshold = args.get("threshold")
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        nc_path = os.path.join(project_dir, "indicators", f"saudi_indicators_{date_str}.nc")
+
+        if not os.path.exists(nc_path):
+            return json.dumps({
+                "error": f"数据文件不存在: {nc_path}",
+                "hint": "indicators/ 目录需要 2025 年 NetCDF 文件（约 5GB，不在 Git 仓库中）",
+            }, ensure_ascii=False)
+
+        try:
+            ds = xr.open_dataset(nc_path)
+            if ind_id not in ds.variables and ind_id not in ds.data_vars:
+                available = sorted(list(ds.data_vars)[:30])
+                ds.close()
+                return json.dumps({
+                    "error": f"指标 {ind_id} 不在文件中",
+                    "available_indicators_sample": available,
+                }, ensure_ascii=False)
+
+            data = ds[ind_id].values
+            lat = ds["lat"].values if "lat" in ds.coords else None
+            lon = ds["lon"].values if "lon" in ds.coords else None
+            ds.close()
+
+            valid = data[~np.isnan(data)]
+            if valid.size == 0:
+                return json.dumps({"indicator": ind_id, "date": date_str,
+                                   "error": "全部为 NaN"}, ensure_ascii=False)
+
+            stats = {
+                "min": round(float(np.nanmin(data)), 2),
+                "max": round(float(np.nanmax(data)), 2),
+                "mean": round(float(np.nanmean(data)), 2),
+                "std": round(float(np.nanstd(data)), 2),
+                "p50": round(float(np.nanpercentile(data, 50)), 2),
+                "p95": round(float(np.nanpercentile(data, 95)), 2),
+                "p99": round(float(np.nanpercentile(data, 99)), 2),
+                "nan_ratio": round(float(np.sum(np.isnan(data)) / data.size), 3),
+            }
+
+            result = {
+                "indicator": ind_id,
+                "date": date_str,
+                "shape": list(data.shape),
+                "statistics": stats,
+            }
+
+            # Threshold analysis
+            if threshold is not None:
+                if isinstance(threshold, (int, float)):
+                    above = data >= threshold
+                    n_above = int(above.sum())
+                    result["threshold_check"] = {
+                        "threshold": threshold,
+                        "cells_above": n_above,
+                        "ratio": round(n_above / valid.size, 4) if valid.size > 0 else 0,
+                    }
+                    if n_above > 0 and lat is not None and lon is not None:
+                        ys, xs = np.where(above)
+                        lats = lat[ys]
+                        lons = lon[xs]
+                        # Find hotspots (top 3 clusters by value)
+                        top_idx = np.argsort(data[ys, xs])[-3:][::-1]
+                        result["threshold_check"]["hotspots"] = [
+                            {"lat": round(float(lats[i]), 1),
+                             "lon": round(float(lons[i]), 1),
+                             "value": round(float(data[ys[i], xs[i]]), 2)}
+                            for i in top_idx
+                        ]
+
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            return json.dumps({"error": str(e), "indicator": ind_id, "date": date_str},
+                            ensure_ascii=False)
 
     def _lookup_city_tool(self, args: dict) -> str:
         """Lookup city coordinates for the agent."""
