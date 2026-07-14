@@ -289,6 +289,24 @@ TOOLS = [
     },
 
     # ═══════════════════════════════════════════════════
+    # City Lookup (Saudi city → coordinates)
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "lookup_city",
+            "description": "根据城市名称查找沙特城市的经纬度坐标和所属区域。支持中文名（吉达、利雅得）和英文名（Jeddah、Riyadh）。适用于'利雅得今天的天气怎么样'等需要城市定位的问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "城市名称，中文或英文"}
+                },
+                "required": ["city"]
+            }
+        }
+    },
+
+    # ═══════════════════════════════════════════════════
     # Composite Multi-Hazard Risk
     # ═══════════════════════════════════════════════════
     {
@@ -396,6 +414,9 @@ class ToolDispatcher:
 
             elif tool_name == "compare_with_history":
                 return self._compare_with_history(arguments)
+
+            elif tool_name == "lookup_city":
+                return self._lookup_city_tool(arguments)
 
             elif tool_name == "detect_composite_risk":
                 return self._detect_composite_risk(arguments)
@@ -939,6 +960,37 @@ class ToolDispatcher:
         "south_asir":     {"lat": (16.0, 21.0), "lon": (40.0, 46.0), "label": "南部阿西尔山脉"},
     }
 
+    SAUDI_CITIES = {
+        # 西部红海沿岸
+        "jeddah":    {"lat": 21.54, "lon": 39.17, "label": "吉达", "region": "red_sea"},
+        "yanbu":     {"lat": 24.09, "lon": 38.06, "label": "延布", "region": "red_sea"},
+        "mecca":     {"lat": 21.39, "lon": 39.86, "label": "麦加", "region": "red_sea"},
+        "medina":    {"lat": 24.47, "lon": 39.61, "label": "麦地那", "region": "red_sea"},
+        "rabigh":    {"lat": 22.80, "lon": 39.03, "label": "拉比格", "region": "red_sea"},
+        # 东部波斯湾沿岸
+        "dammam":    {"lat": 26.42, "lon": 50.10, "label": "达曼", "region": "persian_gulf"},
+        "jubail":    {"lat": 26.96, "lon": 49.57, "label": "朱拜勒", "region": "persian_gulf"},
+        "dhahran":   {"lat": 26.30, "lon": 50.13, "label": "宰赫兰", "region": "persian_gulf"},
+        "khobar":    {"lat": 26.29, "lon": 50.21, "label": "胡拜尔", "region": "persian_gulf"},
+        "ras_tanura":{"lat": 26.70, "lon": 50.10, "label": "拉斯坦努拉", "region": "persian_gulf"},
+        "qatif":     {"lat": 26.56, "lon": 49.99, "label": "盖提夫", "region": "persian_gulf"},
+        # 中部
+        "riyadh":    {"lat": 24.71, "lon": 46.68, "label": "利雅得", "region": "central_desert"},
+        "buraidah":  {"lat": 26.33, "lon": 43.97, "label": "布赖代", "region": "central_desert"},
+        "hail":      {"lat": 27.52, "lon": 41.69, "label": "哈伊勒", "region": "central_desert"},
+        # 北部
+        "tabuk":     {"lat": 28.40, "lon": 36.57, "label": "塔布克", "region": "north"},
+        "aljawf":    {"lat": 29.50, "lon": 39.58, "label": "焦夫", "region": "north"},
+        "arar":      {"lat": 30.98, "lon": 41.04, "label": "阿尔阿尔", "region": "north"},
+        # 南部
+        "abha":      {"lat": 18.22, "lon": 42.51, "label": "艾卜哈", "region": "south_asir"},
+        "khamis":    {"lat": 18.30, "lon": 42.73, "label": "海米斯穆谢特", "region": "south_asir"},
+        "jizan":     {"lat": 16.89, "lon": 42.55, "label": "吉赞", "region": "south_asir"},
+        "najran":    {"lat": 17.49, "lon": 44.13, "label": "奈季兰", "region": "south_asir"},
+        # 西南沙漠
+        "sharorah":  {"lat": 17.49, "lon": 47.11, "label": "沙鲁拉", "region": "empty_quarter"},
+    }
+
     @classmethod
     def _tag_region(cls, lat: float, lon: float) -> str:
         """Return region label for a coordinate."""
@@ -948,11 +1000,42 @@ class ToolDispatcher:
         return "未知区域"
 
     @classmethod
+    def _lookup_city(cls, query: str) -> dict:
+        """Find city by name (Chinese or English). Returns {lat, lon, label, region} or None."""
+        q = query.strip().lower()
+        # Direct match
+        for cid, cdata in cls.SAUDI_CITIES.items():
+            if q == cid or q == cdata["label"]:
+                return cdata
+        # Fuzzy match
+        for cid, cdata in cls.SAUDI_CITIES.items():
+            if q in cid or q in cdata["label"] or cid in q or cdata["label"] in q:
+                return cdata
+        return None
+
+    @classmethod
+    def _nearest_city(cls, lat: float, lon: float, max_dist_deg: float = 3.0) -> dict:
+        """Find nearest city within max_dist_deg (approx 330km at equator)."""
+        import numpy as np
+        best = None
+        best_dist = max_dist_deg
+        for cid, cdata in cls.SAUDI_CITIES.items():
+            d = np.sqrt((lat - cdata["lat"])**2 + (lon - cdata["lon"])**2)
+            if d < best_dist:
+                best_dist = d
+                best = dict(cdata, distance_deg=round(float(d), 1))
+        return best
+
+    @classmethod
     def _tag_hazards_with_region(cls, hazards: list) -> list:
         """Add region field to each detected hazard."""
         for h in hazards:
             if h.get("detected") and "hotspot_lat" in h:
                 h["region"] = cls._tag_region(h["hotspot_lat"], h["hotspot_lon"])
+                city = cls._nearest_city(h["hotspot_lat"], h["hotspot_lon"])
+                if city:
+                    h["nearest_city"] = city["label"]
+                    h["nearest_city_dist_deg"] = city["distance_deg"]
         return hazards
 
     # ═══════════════════════════════════════════════════════
@@ -1121,6 +1204,27 @@ class ToolDispatcher:
             "historical_date": date_str,
             "comparison": comparison,
             "note": f"对比 2026 年 FCN 预报 vs 2025 年 ERA5 再分析检测。注意：数据源不同（预报 vs 再分析），对比结果反映相对异常程度，非严格同源对比。",
+        }, ensure_ascii=False, indent=2)
+
+    def _lookup_city_tool(self, args: dict) -> str:
+        """Lookup city coordinates for the agent."""
+        city_name = args.get("city", "")
+        city = self._lookup_city(city_name)
+        if city:
+            return json.dumps({
+                "found": True,
+                "city": city["label"],
+                "lat": city["lat"],
+                "lon": city["lon"],
+                "region": self.SAUDI_REGIONS.get(city.get("region", ""), {}).get("label", ""),
+                "hint": f"使用 query_observations_nearby(lat={city['lat']}, lon={city['lon']}, radius_km=50) 查询该城市周边数据。",
+            }, ensure_ascii=False, indent=2)
+        # Fuzzy list all cities
+        all_cities = [f'{c["label"]}({cid})' for cid, c in self.SAUDI_CITIES.items()]
+        return json.dumps({
+            "found": False,
+            "query": city_name,
+            "available_cities": all_cities,
         }, ensure_ascii=False, indent=2)
 
     # ═══════════════════════════════════════════════════════
