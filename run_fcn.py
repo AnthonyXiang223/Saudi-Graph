@@ -1,12 +1,13 @@
 """
-FourCastNet 沙特区域预报
+FourCastNet 沙特区域预报（自动获取最新 GFS 分析场）
 在 WSL2 运行: conda activate earth2 && export HF_ENDPOINT=https://hf-mirror.com
     cd /mnt/f/Saudi && python run_fcn.py --days 7
+每日自动: 见 run_fcn_daily.sh
 """
 
 import numpy as np
 import xarray as xr
-import os, argparse
+import os, argparse, datetime
 from collections import OrderedDict
 
 SAUDI_LAT = (16.0, 32.0)
@@ -14,7 +15,7 @@ SAUDI_LON = (34.0, 56.0)
 OUT_DIR = "/mnt/f/Saudi/forecast"
 
 
-def run(days: int = 7):
+def run(days: int = 7, init_time: str = None):
     from earth2studio.models.px import FCN
     from earth2studio.data import GFS
     from earth2studio.run import deterministic
@@ -22,27 +23,36 @@ def run(days: int = 7):
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # ── 1. 模型 ──
+    # ── 1. 初始化时间 ──
+    if init_time:
+        t0 = np.datetime64(init_time)
+    else:
+        # 自动取今天 00Z（GFS 四个时次 00/06/12/18Z 中取最近的 00Z）
+        today = datetime.date.today()
+        t0 = np.datetime64(today.isoformat() + "T00:00")
+    print(f"初始化时间: {t0}")
+
+    # ── 2. 模型 ──
     print("加载 FourCastNet...")
     model = FCN.load_model(FCN.load_default_package())
     print(f"  输入变量: {len(model.input_coords()['variable'])} 个")
 
-    # ── 2. 数据 ──
-    print("连接 GFS 数据源...")
+    # ── 3. 数据 ──
+    print("连接 GFS 数据源（自动下载最新分析场）...")
     data = GFS()
 
-    # ── 3. 输出坐标（仅沙特区域） ──
+    # ── 4. 输出坐标（仅沙特区域，0.25°） ──
     out_coords = OrderedDict({
         "lat": np.arange(SAUDI_LAT[0], SAUDI_LAT[1] + 0.25, 0.25),
         "lon": np.arange(SAUDI_LON[0], SAUDI_LON[1] + 0.25, 0.25),
     })
 
-    # ── 4. IO 后端（NetCDF） ──
-    io = NetCDF4Backend(os.path.join(OUT_DIR, "fcn_forecast.nc"))
+    # ── 5. IO ──
+    out_path = os.path.join(OUT_DIR, "fcn_forecast.nc")
+    io = NetCDF4Backend(out_path)
 
-    # ── 5. 运行 ──
-    nsteps = days * 4  # 4 steps/day
-    t0 = np.datetime64("2026-07-10T00:00")
+    # ── 6. 运行 ──
+    nsteps = days * 4
     times = [t0]
 
     print(f"\nFourCastNet 预报: {nsteps} 步 = {days} 天, 沙特区域")
@@ -57,14 +67,22 @@ def run(days: int = 7):
         output_coords=out_coords,
     )
 
-    print(f"\n完成。输出: {OUT_DIR}/")
+    # 标记初始化时间到文件属性
+    ds = xr.open_dataset(out_path)
+    ds.attrs["fcn_init_time"] = str(t0)
+    ds.attrs["fcn_run_time"] = datetime.datetime.now().isoformat()
+    ds.close()
+
+    print(f"\n完成。输出: {out_path}")
+    print(f"下次更新: 明天运行 python run_fcn.py --days 7")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--days", type=int, default=7, help="预报天数（默认7天）")
+    parser.add_argument("--init", type=str, default=None, help="初始化时间 YYYY-MM-DD（默认今天）")
     args = parser.parse_args()
-    run(days=args.days)
+    run(days=args.days, init_time=args.init)
 
 
 if __name__ == "__main__":
