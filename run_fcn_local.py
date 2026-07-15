@@ -56,9 +56,12 @@ class LocalERA5Source:
         self.pl  = xr.open_dataset(os.path.join(ERA5_DIR, f"era5_pressure_{date_compact}.nc"))
 
     def __call__(self, time, variable):
-        """Return xarray DataArray with dims (time, variable, lat, lon)."""
-        arrays = []
-        var_names = []
+        """Return global DataArray — Saudi data embedded in 721×1440 grid."""
+        import numpy as np
+        arrays = []; var_names = []
+        sfc_lat = self.sfc["latitude"].values
+        sfc_lon = self.sfc["longitude"].values
+
         for v in variable:
             info = VAR_MAP[v]
             if info[0] == "surface":
@@ -66,22 +69,26 @@ class LocalERA5Source:
             else:
                 level_idx = np.argmin(np.abs(self.pl["pressure_level"].values - info[2]))
                 da = self.pl[info[1]].isel(valid_time=0, pressure_level=level_idx)
-            da = da.rename({"latitude": "lat", "longitude": "lon"})
             arrays.append(da.values)
             var_names.append(v)
 
-        stacked = np.stack(arrays)  # (N_var, 721, 1440)
-        lat = self.sfc["latitude"].values
-        lon = self.sfc["longitude"].values
+        saudi = np.stack(arrays)  # (N_var, nlat, nlon)
+
+        # Embed into global 721×1440 grid (FCN requires global input)
+        global_lat = np.arange(90, -90.25, -0.25)
+        global_lon = np.arange(0, 360, 0.25)
+        lat0 = np.argmin(np.abs(global_lat - sfc_lat[0]))
+        lon0 = np.argmin(np.abs(global_lon - sfc_lon[0]))
+        nlat, nlon = saudi.shape[1], saudi.shape[2]
+
+        global_arr = np.zeros((len(var_names), len(global_lat), len(global_lon)), dtype=np.float32)
+        global_arr[:, lat0:lat0+nlat, lon0:lon0+nlon] = saudi
+
         return xr.DataArray(
-            stacked[np.newaxis, ...],  # (1, N_var, 721, 1440)
+            global_arr[np.newaxis, ...],
             dims=["time", "variable", "lat", "lon"],
-            coords={
-                "time": time,
-                "variable": var_names,
-                "lat": lat,
-                "lon": lon,
-            },
+            coords={"time": time, "variable": var_names,
+                    "lat": global_lat, "lon": global_lon},
         )
 
 

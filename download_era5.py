@@ -41,6 +41,7 @@ def download(date: str):
             "time": "00:00",
             "number": "0",
             "data_format": "netcdf",
+            "area": [45, 20, 5, 65],  # N, W, S, E — 中东区域（约全球 1/6）
         },
         os.path.join(OUT_DIR, f"era5_surface_{date.replace('-','')}.nc"),
     )
@@ -57,6 +58,7 @@ def download(date: str):
             "time": "00:00",
             "number": "0",
             "data_format": "netcdf",
+            "area": [32, 34, 16, 56],
         },
         os.path.join(OUT_DIR, f"era5_pressure_{date.replace('-','')}.nc"),
     )
