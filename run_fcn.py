@@ -15,53 +15,19 @@ SAUDI_LON = (34.0, 56.0)
 OUT_DIR = "/mnt/f/Saudi/forecast"
 
 
-def run(days: int = 7, init_time: str = None, source: str = "gfs"):
-    """Run FCN forecast.
-
-    Args:
-        days: forecast length in days
-        init_time: initialization date YYYY-MM-DD (default: latest available)
-        source: data source — "gfs" (real-time, any date) or "era5" (low bias, ~5-day latency)
-    """
+def run(days: int = 7, init_time: str = None):
     from earth2studio.models.px import FCN
+    from earth2studio.data import GFS
     from earth2studio.run import deterministic
     from earth2studio.io import NetCDF4Backend
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # ── 1. 数据源 ──
-    if source == "era5":
-        from earth2studio.data import NCAR_ERA5
-        import s3fs
+    # ── 1. 数据源与候选初始化时间（自动回退） ──
+    print("连接 GFS 数据源...")
+    data = GFS()
 
-        # Patch: NCAR ERA5 bucket is in us-west-2, but s3fs defaults to us-east-1
-        # Bare s3fs works fine; earth2studio's _read_s3_dataset doesn't set region
-        _orig_read = NCAR_ERA5._read_s3_dataset
-        @staticmethod
-        def _patched_read(nc_file_uri, data_variable, time_idx, level_idx, ncar_meta):
-            fs = s3fs.S3FileSystem(anon=True, asynchronous=False,
-                                   client_kwargs={"region_name": "us-west-2"})
-            import xarray as xr
-            with fs.open(nc_file_uri, "rb", block_size=4 * 1400 * 720) as f:
-                ds = xr.open_dataset(f, engine="h5netcdf", cache=False)
-                if f"VAR_{data_variable}" in ds:
-                    data_variable = f"VAR_{data_variable}"
-                da = ds[data_variable]
-                if "time" in da.dims:
-                    da = da.isel(time=time_idx)
-                if "level" in da.dims and level_idx:
-                    da = da.isel(level=level_idx)
-                return da
-        NCAR_ERA5._read_s3_dataset = _patched_read
-
-        print("数据源: ERA5 (ECMWF 再分析 — FCN 训练数据同源，偏差最小)")
-        data = NCAR_ERA5()
-    else:
-        from earth2studio.data import GFS
-        print("数据源: GFS (NOAA 全球预报 — 实时可用，但与 ERA5 存在系统性差异)")
-        data = GFS()
-
-    # 候选时间列表 — ERA5 不需要回退（CDS 数据必定存在），GFS 需要
+    # 候选时间列表：用户指定 → 昨天18Z → 昨天12Z → 前天的四个时次 → 已知可用
     today = datetime.date.today()
     yesterday = today - datetime.timedelta(days=1)
     day_before = today - datetime.timedelta(days=2)
@@ -69,18 +35,15 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
     candidates = []
     if init_time:
         candidates.append(np.datetime64(init_time))
-    if source == "era5":
-        # ERA5 只需指定日期，CDS 上历史数据始终可用
-        if not candidates:
-            candidates.append(np.datetime64(yesterday.isoformat() + "T00:00"))
-    else:
-        for date in [yesterday, day_before]:
-            for hour in ["18", "12", "06", "00"]:
-                candidates.append(np.datetime64(date.isoformat() + f"T{hour}:00"))
-        candidates.append(np.datetime64("2026-07-10T00:00"))
+    # 从近到远排列 GFS 时次（AWS 上新数据可能延迟几小时）
+    for date in [yesterday, day_before]:
+        for hour in ["18", "12", "06", "00"]:
+            candidates.append(np.datetime64(date.isoformat() + f"T{hour}:00"))
+    # 终极后备
+    candidates.append(np.datetime64("2026-07-10T00:00"))
 
     t0 = candidates[0]
-    print(f"尝试时次: {t0}（共 {len(candidates)} 个候选）")
+    print(f"尝试 GFS 时次: {t0}（共 {len(candidates)} 个候选）")
 
     # ── 2. 模型 ──
     print("加载 FourCastNet...")
@@ -164,21 +127,9 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=7, help="预报天数（默认7天）")
-    parser.add_argument("--init", type=str, default=None, help="初始化时间 YYYY-MM-DD")
-    parser.add_argument("--source", type=str, default="gfs", choices=["gfs", "era5"],
-                       help="数据源: gfs(实时可用) / era5(低偏差,需CDS API,延迟约5天)")
+    parser.add_argument("--init", type=str, default=None, help="初始化时间 YYYY-MM-DD（默认今天）")
     args = parser.parse_args()
-
-    if args.source == "era5":
-        cdsrc = os.path.expanduser("~/.cdsapirc")
-        if not os.path.exists(cdsrc):
-            print("错误: ERA5 需要 CDS API key")
-            print(f"  创建 {cdsrc} 并填入:")
-            print("  url: https://cds.climate.copernicus.eu/api")
-            print("  key: <your-uid>:<your-api-key>")
-            return
-
-    run(days=args.days, init_time=args.init, source=args.source)
+    run(days=args.days, init_time=args.init)
 
 
 if __name__ == "__main__":
