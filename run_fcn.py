@@ -31,9 +31,9 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
 
     # ── 1. 数据源 ──
     if source == "era5":
-        from earth2studio.data import ERA5
+        from earth2studio.data import NCAR_ERA5
         print("数据源: ERA5 (ECMWF 再分析 — FCN 训练数据同源，偏差最小)")
-        data = ERA5()
+        data = NCAR_ERA5()
     else:
         from earth2studio.data import GFS
         print("数据源: GFS (NOAA 全球预报 — 实时可用，但与 ERA5 存在系统性差异)")
