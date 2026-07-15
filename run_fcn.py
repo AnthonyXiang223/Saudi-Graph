@@ -32,22 +32,27 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
     # ── 1. 数据源 ──
     if source == "era5":
         from earth2studio.data import NCAR_ERA5
+        from earth2studio.data import ncar as ncar_module
         import s3fs
 
-        # Patch: NCAR ERA5 bucket is in us-west-2, s3fs defaults to us-east-1
-        # Bare s3fs works but earth2studio doesn't set region → 302 redirect timeout
-        _orig_read = NCAR_ERA5._read_s3_dataset
-        @staticmethod
-        def _patched_read(nc_file_uri, time, variable, **kw):
+        # Patch: NCAR ERA5 bucket is in us-west-2, but s3fs defaults to us-east-1
+        # Bare s3fs works fine; earth2studio's _read_s3_dataset doesn't set region
+        _orig_read = ncar_module._read_s3_dataset
+        def _patched_read(nc_file_uri, data_variable, time_idx, level_idx, ncar_meta):
             fs = s3fs.S3FileSystem(anon=True, asynchronous=False,
                                    client_kwargs={"region_name": "us-west-2"})
             import xarray as xr
             with fs.open(nc_file_uri, "rb", block_size=4 * 1400 * 720) as f:
-                ds = xr.open_dataset(f, engine="h5netcdf", chunks={})
-                ds = ds.sel(time=time)
-                da = ds[variable].isel(time=slice(0, kw.get("lead_time", 0) + 1))
-                return da.values
-        NCAR_ERA5._read_s3_dataset = _patched_read
+                ds = xr.open_dataset(f, engine="h5netcdf", cache=False)
+                if f"VAR_{data_variable}" in ds:
+                    data_variable = f"VAR_{data_variable}"
+                da = ds[data_variable]
+                if "time" in da.dims:
+                    da = da.isel(time=time_idx)
+                if "level" in da.dims and level_idx:
+                    da = da.isel(level=level_idx)
+                return da
+        ncar_module._read_s3_dataset = _patched_read
 
         print("数据源: ERA5 (ECMWF 再分析 — FCN 训练数据同源，偏差最小)")
         data = NCAR_ERA5()
