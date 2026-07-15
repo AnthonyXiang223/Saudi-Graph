@@ -15,17 +15,22 @@ SAUDI_LON = (34.0, 56.0)
 OUT_DIR = "/mnt/f/Saudi/forecast"
 
 
-def run(days: int = 7, init_time: str = None):
+def run(days: int = 7, init_time: str = None, source: str = "gfs"):
     from earth2studio.models.px import FCN
-    from earth2studio.data import GFS
     from earth2studio.run import deterministic
     from earth2studio.io import NetCDF4Backend
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # ── 1. 数据源与候选初始化时间（自动回退） ──
-    print("连接 GFS 数据源...")
-    data = GFS()
+    # ── 1. 数据源 ──
+    if source == "era5":
+        from earth2studio.data.ncar import NCAR_ERA5
+        print("数据源: ERA5 (NCAR S3, us-west-2, cache=False)")
+        data = NCAR_ERA5(cache=False)
+    else:
+        from earth2studio.data import GFS
+        print("连接 GFS 数据源...")
+        data = GFS()
 
     # 候选时间列表：用户指定 → 昨天18Z → 昨天12Z → 前天的四个时次 → 已知可用
     today = datetime.date.today()
@@ -35,15 +40,17 @@ def run(days: int = 7, init_time: str = None):
     candidates = []
     if init_time:
         candidates.append(np.datetime64(init_time))
-    # 从近到远排列 GFS 时次（AWS 上新数据可能延迟几小时）
-    for date in [yesterday, day_before]:
-        for hour in ["18", "12", "06", "00"]:
-            candidates.append(np.datetime64(date.isoformat() + f"T{hour}:00"))
-    # 终极后备
-    candidates.append(np.datetime64("2026-07-10T00:00"))
+    if source == "era5":
+        if not candidates:
+            candidates.append(np.datetime64(yesterday.isoformat() + "T00:00"))
+    else:
+        for date in [yesterday, day_before]:
+            for hour in ["18", "12", "06", "00"]:
+                candidates.append(np.datetime64(date.isoformat() + f"T{hour}:00"))
+        candidates.append(np.datetime64("2026-07-10T00:00"))
 
     t0 = candidates[0]
-    print(f"尝试 GFS 时次: {t0}（共 {len(candidates)} 个候选）")
+    print(f"尝试 {'ERA5' if source == 'era5' else 'GFS'} 时次: {t0}")
 
     # ── 2. 模型 ──
     print("加载 FourCastNet...")
@@ -127,9 +134,10 @@ def run(days: int = 7, init_time: str = None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=7, help="预报天数（默认7天）")
-    parser.add_argument("--init", type=str, default=None, help="初始化时间 YYYY-MM-DD（默认今天）")
+    parser.add_argument("--init", type=str, default=None, help="初始化时间 YYYY-MM-DD")
+    parser.add_argument("--source", type=str, default="gfs", choices=["gfs", "era5"])
     args = parser.parse_args()
-    run(days=args.days, init_time=args.init)
+    run(days=args.days, init_time=args.init, source=args.source)
 
 
 if __name__ == "__main__":
