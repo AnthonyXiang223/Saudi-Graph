@@ -32,12 +32,12 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
     # ── 1. 数据源 ──
     if source == "era5":
         from earth2studio.data import NCAR_ERA5
-        from earth2studio.data import ncar as ncar_module
         import s3fs
 
         # Patch: NCAR ERA5 bucket is in us-west-2, but s3fs defaults to us-east-1
         # Bare s3fs works fine; earth2studio's _read_s3_dataset doesn't set region
-        _orig_read = ncar_module._read_s3_dataset
+        _orig_read = NCAR_ERA5._read_s3_dataset
+        @staticmethod
         def _patched_read(nc_file_uri, data_variable, time_idx, level_idx, ncar_meta):
             fs = s3fs.S3FileSystem(anon=True, asynchronous=False,
                                    client_kwargs={"region_name": "us-west-2"})
@@ -52,7 +52,7 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
                 if "level" in da.dims and level_idx:
                     da = da.isel(level=level_idx)
                 return da
-        ncar_module._read_s3_dataset = _patched_read
+        NCAR_ERA5._read_s3_dataset = _patched_read
 
         print("数据源: ERA5 (ECMWF 再分析 — FCN 训练数据同源，偏差最小)")
         data = NCAR_ERA5()
