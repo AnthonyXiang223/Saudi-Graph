@@ -32,6 +32,23 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
     # ── 1. 数据源 ──
     if source == "era5":
         from earth2studio.data import NCAR_ERA5
+        import s3fs
+
+        # Patch: NCAR ERA5 bucket is in us-west-2, s3fs defaults to us-east-1
+        # Bare s3fs works but earth2studio doesn't set region → 302 redirect timeout
+        _orig_read = NCAR_ERA5._read_s3_dataset
+        @staticmethod
+        def _patched_read(nc_file_uri, time, variable, **kw):
+            fs = s3fs.S3FileSystem(anon=True, asynchronous=False,
+                                   client_kwargs={"region_name": "us-west-2"})
+            import xarray as xr
+            with fs.open(nc_file_uri, "rb", block_size=4 * 1400 * 720) as f:
+                ds = xr.open_dataset(f, engine="h5netcdf", chunks={})
+                ds = ds.sel(time=time)
+                da = ds[variable].isel(time=slice(0, kw.get("lead_time", 0) + 1))
+                return da.values
+        NCAR_ERA5._read_s3_dataset = _patched_read
+
         print("数据源: ERA5 (ECMWF 再分析 — FCN 训练数据同源，偏差最小)")
         data = NCAR_ERA5()
     else:
