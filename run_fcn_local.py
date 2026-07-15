@@ -56,15 +56,33 @@ class LocalERA5Source:
         self.pl  = xr.open_dataset(os.path.join(ERA5_DIR, f"era5_pressure_{date_compact}.nc"))
 
     def __call__(self, time, variable):
-        """Return xarray DataArray for a single variable at given time."""
-        info = VAR_MAP[variable[0]]
-        if info[0] == "surface":
-            da = self.sfc[info[1]].isel(valid_time=0)
-        else:
-            level_idx = np.argmin(np.abs(self.pl["pressure_level"].values - info[2]))
-            da = self.pl[info[1]].isel(valid_time=0, pressure_level=level_idx)
-        da = da.rename({"latitude": "lat", "longitude": "lon"})
-        return da.expand_dims("time")
+        """Return xarray DataArray with dims (time, variable, lat, lon)."""
+        arrays = []
+        var_names = []
+        for v in variable:
+            info = VAR_MAP[v]
+            if info[0] == "surface":
+                da = self.sfc[info[1]].isel(valid_time=0)
+            else:
+                level_idx = np.argmin(np.abs(self.pl["pressure_level"].values - info[2]))
+                da = self.pl[info[1]].isel(valid_time=0, pressure_level=level_idx)
+            da = da.rename({"latitude": "lat", "longitude": "lon"})
+            arrays.append(da.values)
+            var_names.append(v)
+
+        stacked = np.stack(arrays)  # (N_var, 721, 1440)
+        lat = self.sfc["latitude"].values
+        lon = self.sfc["longitude"].values
+        return xr.DataArray(
+            stacked[np.newaxis, ...],  # (1, N_var, 721, 1440)
+            dims=["time", "variable", "lat", "lon"],
+            coords={
+                "time": time,
+                "variable": var_names,
+                "lat": lat,
+                "lon": lon,
+            },
+        )
 
 
 def run(date: str, days: int = 3):
