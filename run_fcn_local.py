@@ -80,7 +80,7 @@ class LocalERA5Source:
 
 
 def run(date: str, days: int = 3):
-    from earth2studio.models.px import FCN
+    from earth2studio.models.px import FCN3
     from earth2studio.run import deterministic
     from earth2studio.io import NetCDF4Backend
 
@@ -89,8 +89,8 @@ def run(date: str, days: int = 3):
     print(f"加载本地 ERA5: {date}")
     data = LocalERA5Source(date)
 
-    print("加载 FourCastNet...")
-    model = FCN.load_model(FCN.load_default_package())
+    print("加载 FourCastNet v3...")
+    model = FCN3.load_model(FCN3.load_default_package())
 
     # Saudi output coords
     out_coords = OrderedDict({

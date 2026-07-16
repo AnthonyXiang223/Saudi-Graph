@@ -16,7 +16,7 @@ OUT_DIR = "/mnt/f/Saudi/forecast"
 
 
 def run(days: int = 7, init_time: str = None, source: str = "gfs"):
-    from earth2studio.models.px import FCN
+    from earth2studio.models.px import FCN3
     from earth2studio.run import deterministic
     from earth2studio.io import NetCDF4Backend
 
@@ -54,7 +54,7 @@ def run(days: int = 7, init_time: str = None, source: str = "gfs"):
 
     # ── 2. 模型 ──
     print("加载 FourCastNet...")
-    model = FCN.load_model(FCN.load_default_package())
+    model = FCN3.load_model(FCN3.load_default_package())
     print(f"  输入变量: {len(model.input_coords()['variable'])} 个")
 
     # ── 3. 输出坐标（仅沙特区域，0.25°） ──
