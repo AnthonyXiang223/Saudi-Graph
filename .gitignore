@@ -45,3 +45,6 @@ archive/
 
 # Streamlit
 .streamlit/
+earth2studio/
+makani/
+torch-harmonics/

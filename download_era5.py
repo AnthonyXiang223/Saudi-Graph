@@ -1,26 +1,28 @@
 """
-CDS API 下载 ERA5 数据供 FCN 使用
+CDS API 下载 ERA5 数据供 Pangu/FCN 使用
 用法: python download_era5.py --date 2025-07-01
-需要: CDS API key (~/.cdsapirc), pip install cdsapi
+需要: CDS API key (~/.cdsapirc)
 """
 
 import cdsapi
 import argparse, os
 
-# FCN 需要的 26 个变量
+# Surface variables (common to FCN and Pangu)
 SURFACE_VARS = [
     "10m_u_component_of_wind", "10m_v_component_of_wind",
     "2m_temperature", "surface_pressure", "mean_sea_level_pressure",
     "total_column_water_vapour",
 ]
 
-PRESSURE_LEVELS = [50, 250, 500, 850, 1000]  # hPa
+# Pangu needs 13 pressure levels; FCN only uses 5 of these
+PRESSURE_LEVELS = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
 PRESSURE_VARS = [
-    "temperature",           # T at all levels
-    "u_component_of_wind",   # U at all levels
-    "v_component_of_wind",   # V at all levels
-    "geopotential",          # Z at all levels
-    "relative_humidity",     # R at all levels
+    "temperature",
+    "u_component_of_wind",
+    "v_component_of_wind",
+    "geopotential",
+    "specific_humidity",      # Pangu uses q not r
+    "relative_humidity",      # FCN needs r
 ]
 
 OUT_DIR = "era5_data"
@@ -34,7 +36,7 @@ def download(date: str):
     # ── 1. Surface single-level ──
     sfc_path = os.path.join(OUT_DIR, f"era5_surface_{date_compact}.nc")
     if os.path.exists(sfc_path):
-        print(f"地表变量已存在，跳过: {sfc_path}")
+        print(f"地表变量已存在，跳过")
     else:
         print(f"下载地表变量: {date}")
         c.retrieve(
@@ -53,9 +55,9 @@ def download(date: str):
     # ── 2. Pressure-level ──
     pl_path = os.path.join(OUT_DIR, f"era5_pressure_{date_compact}.nc")
     if os.path.exists(pl_path):
-        print(f"气压层变量已存在，跳过: {pl_path}")
+        print(f"气压层变量已存在，跳过")
     else:
-        print(f"下载气压层变量: {date}")
+        print(f"下载气压层变量: {date} ({len(PRESSURE_LEVELS)} 层)")
         c.retrieve(
             "reanalysis-era5-pressure-levels",
             {
