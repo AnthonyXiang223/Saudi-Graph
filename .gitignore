@@ -48,3 +48,10 @@ archive/
 earth2studio/
 makani/
 torch-harmonics/
+
+# Downloaded forecast data (large)
+aifs_forecasts/
+test_aifs.grib2
+
+# Knowledge base (can be rebuilt with build_kb.py)
+kb/

@@ -16,9 +16,21 @@ Usage:
 """
 
 import json
+import logging
 import os
 import sys
+import time as _time
+import traceback as _traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+log = logging.getLogger("mazu.tools")
+
+# IFS forecast pipeline integration
+try:
+    from ifs_pipeline import load_indicators_ifs, detect_ifs_hazards, build_ifs_forecast_report
+    HAS_IFS = True
+except ImportError:
+    HAS_IFS = False
 
 # ── Tool Schema Definitions (OpenAI format) ──
 
@@ -368,6 +380,64 @@ TOOLS = [
         }
     },
 
+    # ═══════════════════════════════════════════════════
+    # RAG Knowledge Base Search
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": "搜索 MAZU 知识库，检索气象指标的物理定义、检测规则条件、沙特气候特征、模型局限性等技术知识。返回相关文档片段及来源。适用于'这个指标是什么意思''检测规则的条件权重是多少''沙特沙漠气候有什么特征'等需要查阅文档的问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索查询，建议用中文关键词或自然语言问题，如 'tmax_c 怎么算的' '山洪检测条件权重' 'Shamal风的气候特征'"
+                    },
+                    "k": {
+                        "type": "integer",
+                        "description": "返回结果数量，默认 3，最多 8"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+
+    # ═══════════════════════════════════════════════════
+    # Event Detection - IFS (ECMWF downloaded forecast)
+    # ═══════════════════════════════════════════════════
+    {
+        "type": "function",
+        "function": {
+            "name": "detect_ifs_forecast",
+            "description": "基于 ECMWF IFS 全球预报(0.25deg)检测未来灾害风险。IFS有完整大气变量覆盖全部四种灾害。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "IFS 初始日期 YYYYMMDD。留空则用最近可用日期。"},
+                    "forecast_day": {"type": "integer", "description": "预报天数偏移(0=分析场, 1=明天), 默认0"},
+                    "location": {"type": "string", "description": "关注地点, 可选"},
+                    "hazard_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
+                        "description": "灾害类型列表, 不传则检测全部"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_ifs_dates",
+            "description": "列出所有可用的 IFS 预报日期(aifs_forecasts/目录)。",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+
 ]
 
 
@@ -385,71 +455,94 @@ class ToolDispatcher:
 
     def dispatch(self, tool_name: str, arguments: dict) -> str:
         """Execute a tool call and return result as JSON string."""
+        t0 = _time.perf_counter()
+        args_preview = json.dumps(arguments, ensure_ascii=False)
+        if len(args_preview) > 200:
+            args_preview = args_preview[:200] + "…"
+        log.info("→ %s(%s)", tool_name, args_preview)
+
         try:
             if tool_name == "query_hazard_indicators":
-                return self._get(f"/api/sparql/hazard/{arguments['hazard_type']}")
+                result = self._get(f"/api/sparql/hazard/{arguments['hazard_type']}")
 
             elif tool_name == "query_indicator_detail":
-                return self._get(f"/api/sparql/indicator/{arguments['indicator_id']}")
+                result = self._get(f"/api/sparql/indicator/{arguments['indicator_id']}")
 
             elif tool_name == "query_indicator_chain":
-                return self._get(f"/api/sparql/chain/{arguments['indicator_id']}")
+                result = self._get(f"/api/sparql/chain/{arguments['indicator_id']}")
 
             elif tool_name == "search_indicators":
-                return self._get(f"/api/sparql/search?q={arguments['keyword']}")
+                result = self._get(f"/api/sparql/search?q={arguments['keyword']}")
 
             elif tool_name == "query_rule_detail":
-                return self._get(f"/api/sparql/rule/{arguments['rule_id']}")
+                result = self._get(f"/api/sparql/rule/{arguments['rule_id']}")
 
             elif tool_name == "query_observations_nearby":
                 params = {k: v for k, v in arguments.items() if v is not None}
                 qs = "&".join(f"{k}={v}" for k, v in params.items())
-                return self._get(f"/api/sparql/geospatial/radius?{qs}")
+                result = self._get(f"/api/sparql/geospatial/radius?{qs}")
 
             elif tool_name == "query_events_in_region":
-                return self._get(f"/api/sparql/geospatial/intersects?region={arguments['region']}")
+                result = self._get(f"/api/sparql/geospatial/intersects?region={arguments['region']}")
 
             elif tool_name == "query_event_timeline":
                 sd = arguments.get("start_date", "")
                 ed = arguments.get("end_date", "")
-                return self._get(f"/api/sparql/temporal/timeline?start={sd}&end={ed}")
+                result = self._get(f"/api/sparql/temporal/timeline?start={sd}&end={ed}")
 
             elif tool_name == "query_cascading_chain":
-                return self._get(f"/api/sparql/temporal/cascade/{arguments['event_id']}")
+                result = self._get(f"/api/sparql/temporal/cascade/{arguments['event_id']}")
 
             elif tool_name == "query_provenance":
-                return self._get(f"/api/sparql/provenance/indicator/{arguments['indicator_id']}")
+                result = self._get(f"/api/sparql/provenance/indicator/{arguments['indicator_id']}")
 
             elif tool_name == "detect_extreme_events":
                 body = {"date": arguments["date"]}
                 if "hazard_types" in arguments:
                     body["hazard_type"] = arguments["hazard_types"][0] if arguments["hazard_types"] else None
                 r = self.requests.post(f"{self.api_base}/api/detect", json=body)
-                return json.dumps(r.json(), ensure_ascii=False, indent=2)
+                result = json.dumps(r.json(), ensure_ascii=False, indent=2)
 
+            elif tool_name == "detect_ifs_forecast":
+                result = self._detect_from_ifs(arguments)
             elif tool_name == "detect_future_events":
-                return self._detect_from_forecast(arguments)
+                result = self._detect_from_forecast(arguments)
 
             elif tool_name == "detect_forecast_sequence":
-                return self._detect_sequence(arguments)
+                result = self._detect_sequence(arguments)
 
             elif tool_name == "compare_with_history":
-                return self._compare_with_history(arguments)
+                result = self._compare_with_history(arguments)
 
+            elif tool_name == "search_knowledge_base":
+                result = self._search_kb(arguments)
 
             elif tool_name == "get_city_weather":
-                return self._get_city_weather(arguments)
+                result = self._get_city_weather(arguments)
 
+            elif tool_name == "list_ifs_dates":
+                result = self._list_ifs_dates(arguments)
             elif tool_name == "lookup_city":
-                return self._lookup_city_tool(arguments)
+                result = self._lookup_city_tool(arguments)
 
             elif tool_name == "detect_composite_risk":
-                return self._detect_composite_risk(arguments)
+                result = self._detect_composite_risk(arguments)
 
             else:
-                return json.dumps({"error": f"Unknown tool: {tool_name}"})
+                result = json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+            elapsed_ms = (_time.perf_counter() - t0) * 1000
+            log.info("← %s  ok  %d ms  %d chars  preview: %.120s",
+                     tool_name, int(elapsed_ms), len(result),
+                     result.replace("\n", " ").strip())
+            return result
 
         except Exception as e:
+            elapsed_ms = (_time.perf_counter() - t0) * 1000
+            log.error("← %s  FAIL  %d ms  %s: %s\n%s",
+                      tool_name, int(elapsed_ms),
+                      type(e).__name__, str(e)[:200],
+                      _traceback.format_exc()[-500:])
             return json.dumps({"error": str(e), "tool": tool_name})
 
     # ═══════════════════════════════════════════════════════
@@ -1067,6 +1160,45 @@ class ToolDispatcher:
     # detect_forecast_sequence — batch multi-day detection
     # ═══════════════════════════════════════════════════════
 
+    def _detect_from_ifs(self, args: dict) -> str:
+        """IFS forecast-based hazard detection."""
+        if not HAS_IFS:
+            return json.dumps({"error": "IFS pipeline not installed", "hint": "pip install ifs_pipeline"}, ensure_ascii=False)
+
+        from ifs_pipeline import load_indicators_ifs, detect_ifs_hazards, build_ifs_forecast_report, list_ifs_dates
+
+        date = args.get("date")
+        forecast_day = args.get("forecast_day", 0)
+        hazard_types = args.get("hazard_types")
+        location = args.get("location")
+
+        if hazard_types is None:
+            hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+
+        # Auto-select date if not provided
+        if date is None:
+            dates = list_ifs_dates()
+            if not dates:
+                return json.dumps({"error": "没有可用的IFS预报数据", "hint": "运行 python scripts/download/download_aifs.py 下载"}, ensure_ascii=False)
+            date = dates[-1]  # latest
+
+        ifs_data = load_indicators_ifs(date, forecast_day)
+        if ifs_data is None:
+            return json.dumps({"error": f"IFS数据不存在: {date}", "available": list_ifs_dates()}, ensure_ascii=False)
+
+        hazards = detect_ifs_hazards(ifs_data, hazard_types)
+        report = build_ifs_forecast_report(hazards, ifs_data, forecast_day, location)
+
+        return json.dumps(report, ensure_ascii=False, indent=2)
+
+    def _list_ifs_dates(self, args: dict) -> str:
+        """List available IFS dates."""
+        if not HAS_IFS:
+            return json.dumps({"error": "IFS pipeline not installed"}, ensure_ascii=False)
+        from ifs_pipeline import list_ifs_dates
+        dates = list_ifs_dates()
+        return json.dumps({"available_dates": dates, "count": len(dates), "source": "aifs_forecasts/"}, ensure_ascii=False, indent=2)
+
     def _detect_sequence(self, args: dict) -> str:
         """Batch detection across multiple forecast days with trend analysis."""
         import os
@@ -1544,9 +1676,257 @@ class ToolDispatcher:
             ),
         }, ensure_ascii=False, indent=2)
 
+    # ═══════════════════════════════════════════════════════
+    # RAG Knowledge Base Search
+    # ═══════════════════════════════════════════════════════
+
+    def _search_kb(self, args: dict) -> str:
+        """Search the local ChromaDB knowledge base."""
+        import os
+
+        query = args.get("query", "")
+        k = min(args.get("k", 3), 8)
+
+        if not query.strip():
+            return json.dumps({"error": "query 不能为空"}, ensure_ascii=False)
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        kb_dir = os.path.join(project_dir, "kb")
+
+        if not os.path.isdir(kb_dir):
+            return json.dumps({
+                "error": "知识库未构建",
+                "hint": "运行 python build_kb.py 构建知识库",
+                "kb_path": kb_dir,
+            }, ensure_ascii=False)
+
+        try:
+            from langchain_community.vectorstores import Chroma
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+
+            embed_model = os.environ.get(
+                "MAZU_EMBED_MODEL",
+                "BAAI/bge-small-zh-v1.5",
+            )
+
+            embeddings = HuggingFaceEmbeddings(
+                model_name=embed_model,
+                model_kwargs={"device": "cpu"},
+                encode_kwargs={"normalize_embeddings": True},
+            )
+
+            vectorstore = Chroma(
+                persist_directory=kb_dir,
+                embedding_function=embeddings,
+                collection_name="mazu_knowledge",
+            )
+
+            results = vectorstore.similarity_search_with_score(query, k=k)
+
+            hits = []
+            for doc, score in results:
+                hits.append({
+                    "content": doc.page_content[:800],
+                    "source": doc.metadata.get("source", "?"),
+                    "type": doc.metadata.get("type", "?"),
+                    "relevance": round(float(1.0 / (1.0 + score)), 4),  # L2 → 相似度
+                })
+
+            return json.dumps({
+                "query": query,
+                "total_hits": len(hits),
+                "results": hits,
+            }, ensure_ascii=False, indent=2)
+
+        except ImportError as e:
+            return json.dumps({
+                "error": f"缺少依赖: {e}",
+                "hint": "pip install langchain langchain-community chromadb sentence-transformers",
+            }, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": f"检索失败: {str(e)}"}, ensure_ascii=False)
+
     def _get(self, path):
         r = self.requests.get(f"{self.api_base}{path}")
         return json.dumps(r.json(), ensure_ascii=False, indent=2)
+
+
+# ── Smart tool-result truncation ──
+
+def _trunc_str(s: str, n: int = 60) -> str:
+    """Truncate a long string value, keeping it parseable."""
+    if len(s) <= n:
+        return s
+    return s[:n] + "…"
+
+
+def smart_truncate(result: str, tool_name: str = "", max_chars: int = 3000) -> str:
+    """Intelligently truncate a tool result, keeping JSON structure valid.
+
+    Different from ``result[:max_chars]`` which can cut JSON mid-key and
+    destroy parseability.  This function parses the result, downsamples
+    large lists / long strings, and re-serialises, so the truncated
+    output is still valid JSON the LLM can read.
+
+    For non-JSON results we break at the last paragraph boundary.
+    """
+    if len(result) <= max_chars:
+        return result
+
+    # ── Non-JSON: paragraph-boundary truncation ──
+    try:
+        data = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        truncated = result[:max_chars]
+        last_nl = truncated.rfind("\n")
+        if last_nl > max_chars * 0.5:
+            truncated = truncated[:last_nl]
+        omitted = len(result) - len(truncated)
+        return truncated + f"\n…(省略 {omitted} 字符)"
+
+    # ── JSON result: structure-aware trimming ──
+    _TOOLS_DETECTION = {
+        "detect_future_events", "detect_extreme_events", "detect_ifs_forecast",
+    }
+    _TOOLS_SEQUENCE = {"detect_forecast_sequence"}
+    _TOOLS_KB = {"search_knowledge_base"}
+
+    if tool_name in _TOOLS_DETECTION:
+        keep = {}
+        for k in ("forecast_source", "forecast_day", "lead_time_h", "date",
+                   "region_calibrated", "synthesis"):
+            if k in data:
+                keep[k] = data[k]
+        hazards = data.get("hazards", data.get("events", []))
+        keep["hazards"] = []
+        for h in hazards:
+            summary = {
+                "hazard_type": h.get("hazard_type"),
+                "detected": h.get("detected"),
+                "severity": h.get("severity"),
+                "max_risk_score": h.get("max_risk_score"),
+                "coverage": h.get("coverage"),
+                "hotspot": f"{h.get('hotspot_lat', '?')}N, {h.get('hotspot_lon', '?')}E",
+            }
+            triggers = h.get("triggered_conditions", [])
+            # Keep top 3 only (each trigger with truncated strings)
+            summary["top_triggers"] = [
+                {"indicator": _trunc_str(t.get("indicator", ""), 60),
+                 "cells": t.get("cells_triggered"),
+                 "peak": t.get("peak_value"),
+                 "condition": _trunc_str(t.get("condition", ""), 50)}
+                for t in triggers[:3]
+            ]
+            if len(triggers) > 3:
+                summary["_triggers_omitted"] = len(triggers) - 3
+            keep["hazards"].append(summary)
+        keep["_truncated"] = True
+
+    elif tool_name in _TOOLS_SEQUENCE:
+        keep = {}
+        for k in ("start_day", "end_day", "forecast_source", "trend"):
+            if k in data:
+                keep[k] = data[k]
+        days = data.get("daily_results", [])
+        keep["daily_summary"] = []
+        for d in days[:3]:  # max 3 days
+            keep["daily_summary"].append({
+                "forecast_day": d.get("forecast_day"),
+                "lead_time_h": d.get("lead_time_h"),
+                "hazards": [
+                    {"type": h.get("hazard_type"), "sev": h.get("severity"),
+                     "score": h.get("max_risk_score")}
+                    for h in d.get("hazards", [])
+                ],
+            })
+        if len(days) > 3:
+            keep["_days_omitted"] = len(days) - 3
+        keep["_truncated"] = True
+
+    elif tool_name in _TOOLS_KB:
+        results = data.get("results", [])
+        keep = {
+            "query": data.get("query"),
+            "total_hits": data.get("total_hits"),
+            "results": [
+                {**r, "content": r.get("content", "")[:200]}
+                for r in results[:3]
+            ],
+            "_truncated": True,
+        }
+
+    else:
+        # Generic: downsample large lists / long strings / large dicts
+        keep = {}
+        for k, v in data.items():
+            if isinstance(v, list) and len(v) > 5:
+                keep[k] = v[:5]
+                keep[f"{k}_count"] = len(v)
+            elif isinstance(v, str) and len(v) > 500:
+                keep[k] = v[:500] + "…"
+            elif isinstance(v, dict):
+                if len(v) > 10:
+                    sub = dict(list(v.items())[:10])
+                    sub["_total_keys"] = len(v)
+                    keep[k] = sub
+                else:
+                    sub = {}
+                    for sk, sv in v.items():
+                        if isinstance(sv, list) and len(sv) > 5:
+                            sub[sk] = sv[:3]
+                            sub[f"{sk}_count"] = len(sv)
+                        elif isinstance(sv, str) and len(sv) > 500:
+                            sub[sk] = sv[:500] + "…"
+                        else:
+                            sub[sk] = sv
+                    keep[k] = sub
+            else:
+                keep[k] = v
+        keep["_truncated"] = True
+
+    # ── Safe re-serialisation ──
+    # 1. Try compact (no indent) — fastest path to fit
+    out = json.dumps(keep, ensure_ascii=False, indent=None, separators=(",", ":"))
+    if len(out) <= max_chars:
+        # Compact fits — re-serialise with indent for readability if it still fits
+        pretty = json.dumps(keep, ensure_ascii=False, indent=2)
+        if len(pretty) <= max_chars:
+            return pretty
+        return out
+
+    # 2. Compact still too long: progressively remove items until it fits
+    if tool_name in _TOOLS_DETECTION and "hazards" in keep:
+        while len(keep["hazards"]) > 1:
+            keep["hazards"].pop()
+            keep["_hazards_omitted"] = keep.get("_hazards_omitted", 0) + 1
+            out = json.dumps(keep, ensure_ascii=False, indent=None, separators=(",", ":"))
+            if len(out) <= max_chars:
+                return out
+        # Last resort: drop triggers too
+        for h in keep["hazards"]:
+            while h.get("top_triggers") and len(h["top_triggers"]) > 1:
+                h["top_triggers"].pop()
+                h["_triggers_omitted"] = h.get("_triggers_omitted", 0) + 1
+                out = json.dumps(keep, ensure_ascii=False, indent=None, separators=(",", ":"))
+                if len(out) <= max_chars:
+                    return out
+
+    # Generic progressive removal
+    if isinstance(keep, dict):
+        list_keys = [k for k, v in keep.items() if isinstance(v, list)]
+        for lk in list_keys:
+            while len(keep[lk]) > 1:
+                keep[lk].pop()
+                out = json.dumps(keep, ensure_ascii=False, indent=None, separators=(",", ":"))
+                if len(out) <= max_chars:
+                    return out
+
+    # 3. Absolute last resort: minimal valid JSON with error metadata
+    return json.dumps(
+        {"_error": "result_too_large", "_original_chars": len(result),
+         "_truncated_to": max_chars, "_tool": tool_name},
+        ensure_ascii=False,
+    )
 
 
 # ── Convenience: dispatch function (stateless, for simple loops) ──

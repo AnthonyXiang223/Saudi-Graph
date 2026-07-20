@@ -2701,6 +2701,178 @@
         "coverage_pct": 100.0
       },
       "limitations": "CAPE已折算二维后参与评分。DS10缺测时短时强降水项视为缺测。分数越高越多触发因子同时满足"
+    },
+    {
+      "id": "precip_percentile",
+      "description": "降水百分位 — 基于365天格点Gamma分布气候态的日降水极端性评估",
+      "category": "composite",
+      "inputs": [
+        "daily_precip_total"
+      ],
+      "expression": "P(X <= daily_precip_total | Gamma(shape, scale)) * 100",
+      "dag": {
+        "op": "probabilistic_gate",
+        "method": "gamma_cdf",
+        "input": {
+          "op": "var",
+          "name": "daily_precip_total"
+        },
+        "climatology": "precip_climatology.nc",
+        "params": [
+          "gamma_shape",
+          "gamma_scale"
+        ],
+        "note": "矩估计拟合, 逐格点独立"
+      },
+      "output_unit": "percentile (0-100)",
+      "source": "DS1(ERA5 365天气候态拟合)",
+      "co_occurs_with": [
+        "daily_precip_total",
+        "flash_flood_risk",
+        "pwat"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
+      },
+      "limitations": "干旱区(P95=0-2mm)过于严格, 山洪检测使用P80代替P95。Gamma拟合在极低降水区可能不稳定。"
+    },
+    {
+      "id": "heat_gpd_prob",
+      "description": "GPD极端高温概率 — 基于Peak-Over-Threshold极值理论估计当前温度超过格点GPD阈值的罕见程度",
+      "category": "composite",
+      "inputs": [
+        "tmax_c"
+      ],
+      "expression": "P(T>tmax) = exp(-(tmax-threshold)/scale) * exceedance_rate, if tmax > threshold; else 1.0",
+      "dag": {
+        "op": "probabilistic_gate",
+        "method": "gpd_peak_over_threshold",
+        "input": {
+          "op": "var",
+          "name": "tmax_c"
+        },
+        "climatology": "heat_gpd_climatology.nc",
+        "params": [
+          "gpd_threshold",
+          "gpd_shape",
+          "gpd_scale",
+          "exceedance_rate"
+        ],
+        "note": "逐格点独立拟合, POT方法"
+      },
+      "output_unit": "probability (0-1, 越小越极端)",
+      "source": "DS1(ERA5 365天极值拟合)",
+      "co_occurs_with": [
+        "tmax_c",
+        "heatwave_day_flag",
+        "t2m_anomaly_c",
+        "vpd_kpa"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
+      },
+      "limitations": "基于2025年单年数据拟合GPD,参数估计方差较大。<=0.05触发极端高温门控,可绕过heatwave_day_flag。沙漠区域格点阈值可能偏高。"
+    },
+    {
+      "id": "dust_joint_prob",
+      "description": "沙尘Copula联合概率 — 4变量(风速/露点差/1-RH/风切变)经验CDF的Gumbel min Copula,衡量起沙条件同步极端程度",
+      "category": "composite",
+      "inputs": [
+        "wind10_speed",
+        "dewpoint_depression_c",
+        "rh2m",
+        "wind_shear_850_200"
+      ],
+      "expression": "P_dust = min(F_wind, F_dew, F_rh, F_shear), F_* = empirical_CDF(variable, percentiles)",
+      "dag": {
+        "op": "probabilistic_gate",
+        "method": "empirical_copula_min",
+        "input": {
+          "op": "multivar",
+          "vars": [
+            "wind10_speed",
+            "dewpoint_depression_c",
+            "rh2m",
+            "wind_shear_850_200"
+          ]
+        },
+        "climatology": "dust_joint_climatology.nc",
+        "params": [
+          "percentile_values",
+          "wind10_pct",
+          "dewpoint_pct",
+          "rh2m_pct",
+          "shear_pct"
+        ],
+        "note": "scipy.interpolate.interp1d线性插值, 逐格点独立, min算子联合, 4变量Gumbel型"
+      },
+      "output_unit": "joint probability (0-1, 越高越有利起尘)",
+      "source": "DS1(ERA5 365天经验分布)",
+      "co_occurs_with": [
+        "wind10_speed",
+        "dewpoint_depression_c",
+        "rh2m",
+        "wind_shear_850_200"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
+      },
+      "limitations": "Copula min假设4变量单调关联,忽略补偿效应。>=0.50可绕过primary gate(wind10_speed)。Haboob类对流沙尘(CAPE驱动)因机制不同仍会漏检。基于2025年单年数据。"
+    },
+    {
+      "id": "humid_heat_joint_prob",
+      "description": "湿热Copula联合概率 — 4变量(SST/RH/T2m/1-wind)经验CDF的Gumbel min Copula,衡量沿海复合湿热同步极端程度",
+      "category": "composite",
+      "inputs": [
+        "sst_celsius",
+        "rh2m",
+        "t2m_c",
+        "wind10_speed"
+      ],
+      "expression": "P_humid = min(F_sst, F_rh, F_t2m, F_1/wind), F_* = empirical_CDF(variable, percentiles)",
+      "dag": {
+        "op": "probabilistic_gate",
+        "method": "empirical_copula_min",
+        "input": {
+          "op": "multivar",
+          "vars": [
+            "sst_celsius",
+            "rh2m",
+            "t2m_c",
+            "wind10_speed"
+          ]
+        },
+        "climatology": "humid_heat_joint_climatology.nc",
+        "params": [
+          "percentile_values",
+          "sst_pct",
+          "rh2m_pct",
+          "t2m_pct",
+          "wind_pct"
+        ],
+        "note": "scipy.interpolate.interp1d线性插值, 逐格点独立, min算子联合, 仅沿海格点有效"
+      },
+      "output_unit": "joint probability (0-1, 越小越极端)",
+      "source": "DS1(ERA5 365天经验分布)+DS10(SST)",
+      "co_occurs_with": [
+        "sst_celsius",
+        "rh2m",
+        "t2m_c",
+        "wind10_speed",
+        "heat_index_c"
+      ],
+      "availability": {
+        "effective_days": 365,
+        "total_days": 365,
+        "coverage_pct": 100.0
+      },
+      "limitations": "仅沿海格点有效(红海/波斯湾沿岸),内陆格点SST无物理意义。<=0.05触发绕过primary gate(sst_celsius)。低风速(1/wind)在静风日可能数值不稳定。基于2025年单年数据。"
     }
   ]
 }

@@ -9,7 +9,7 @@ import json
 import os
 import sys
 import logging
-from context_manager import ContextManager
+from context_manager import ContextManager, stream_chat_completion
 
 # ── Page config ──
 st.set_page_config(
@@ -189,9 +189,12 @@ with st.sidebar:
     st.divider()
 
     st.subheader("服务状态")
+
     import requests
+    kg_online = False
     try:
         r = requests.get("http://127.0.0.1:5000/api/sparql/summary", timeout=2)
+        kg_online = True
         st.success("知识图谱 · 在线")
     except Exception:
         st.error("知识图谱 · 离线")
@@ -204,6 +207,15 @@ with st.sidebar:
     else:
         st.warning("FCN 预报 · 未生成")
         st.caption("请在 WSL2 中运行 `python run_fcn.py --days 7`")
+
+    st.divider()
+
+    if kg_online:
+        st.link_button(
+            "🔗 打开知识图谱仪表盘",
+            "http://127.0.0.1:5000/",
+            use_container_width=True,
+        )
 
     st.divider()
     st.caption("DeepSeek-V3 + FourCastNet + KWG")
@@ -419,9 +431,9 @@ else:
                 base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             )
 
-            from agent_tools import TOOLS as AGENT_TOOLS, dispatch_tool
+            from agent_tools import TOOLS as AGENT_TOOLS, dispatch_tool, smart_truncate
 
-            # ReAct loop
+            # ★ ReAct loop — 一次流式调用同时处理 tool_calls 和文本
             display_tool_calls = []
             final_content = ""
             max_turns = 5
@@ -430,67 +442,80 @@ else:
             for turn in range(max_turns):
                 status_placeholder.caption(f"⏳ 分析中... (第 {turn+1}/{max_turns} 轮)")
 
-                response = client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=st.session_state.messages,
-                    tools=AGENT_TOOLS,
-                    tool_choice="auto",
-                )
-                msg = response.choices[0].message
+                # ★ 单次流式调用 — 不先调 non-streaming 再调 streaming
+                collected = ""
+                stream_msg = None
 
-                # ── 模型直接回答 → 流式输出 ──
-                if not msg.tool_calls:
-                    status_placeholder.caption("💬 生成回答中...")
-                    # 流式获取最终答案
-                    stream = client.chat.completions.create(
-                        model="deepseek-chat",
-                        messages=st.session_state.messages,
-                        stream=True,
-                    )
-                    placeholder = st.empty()
-                    full_text = ""
-                    for chunk in stream:
-                        delta = chunk.choices[0].delta
-                        if delta.content:
-                            full_text += delta.content
-                            placeholder.markdown(full_text + "▌")
-                    placeholder.markdown(full_text)
-                    final_content = full_text
+                placeholder = st.empty()
+                for item in stream_chat_completion(
+                    client, "deepseek-chat", st.session_state.messages, AGENT_TOOLS
+                ):
+                    if isinstance(item, str):
+                        collected += item
+                        placeholder.markdown(collected + "▌")
+                    else:
+                        stream_msg = item
+
+                if stream_msg is None:
+                    continue
+
+                # ── 工具调用 ──
+                if stream_msg.tool_calls:
+                    status_placeholder.caption("🔧 调用工具中...")
+                    # 清除中间文本 placeholder
+                    placeholder.empty()
+
+                    # 构造 assistant message
+                    tc_dicts = []
+                    for tc in stream_msg.tool_calls:
+                        tc_dicts.append({
+                            "id": tc.id,
+                            "type": tc.type,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        })
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": stream_msg.content,
+                        "tool_calls": tc_dicts,
+                    })
+
+                    for tc in stream_msg.tool_calls:
+                        name = tc.function.name
+                        args = json.loads(tc.function.arguments)
+                        result = dispatch_tool(name, args)
+                        result = smart_truncate(result, name, max_chars=3000)
+
+                        st.session_state.messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        })
+                        display_tool_calls.append({
+                            "name": name,
+                            "args": args,
+                            "result": result,
+                        })
+
+                        # 即时展示工具调用
+                        with st.expander(f"🔧 {name}", expanded=False):
+                            st.caption(f"参数: `{json.dumps(args, ensure_ascii=False)}`")
+                            render_tool_result(name, result)
+
+                # ── 最终回答（文本已在流式中打印）──
+                else:
+                    placeholder.markdown(collected)
+                    final_content = stream_msg.content or collected
                     status_placeholder.empty()
                     st.session_state.messages.append(
                         {"role": "assistant", "content": final_content}
                     )
                     break
 
-                # ── 工具调用 ──
-                status_placeholder.caption(f"🔧 调用工具中...")
-                st.session_state.messages.append(msg)
-
-                for tc in msg.tool_calls:
-                    name = tc.function.name
-                    args = json.loads(tc.function.arguments)
-                    result = dispatch_tool(name, args)
-                    if len(result) > 3000:
-                        result = result[:3000] + "\n...(truncated)"
-
-                    st.session_state.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
-                    display_tool_calls.append({
-                        "name": name,
-                        "args": args,
-                        "result": result,
-                    })
-
-                    # 即时展示工具调用状态
-                    with st.expander(f"🔧 {name}", expanded=False):
-                        st.caption(f"参数: `{json.dumps(args, ensure_ascii=False)}`")
-                        render_tool_result(name, result)
-
             else:
-                # Exceeded turns — streaming fallback
+                # Exceeded max turns — streaming fallback
                 status_placeholder.caption("💬 总结中...")
                 st.session_state.messages.append({
                     "role": "user",

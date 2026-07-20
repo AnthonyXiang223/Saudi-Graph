@@ -21,10 +21,10 @@
         },
         {
           "indicator": "precip_percentile",
-          "op": ">=", "value": 95,
+          "op": ">=", "value": 80,
           "weight": 0.30,
           "role": "probabilistic_gate",
-          "note": "降水百分位(基于365天格点气候态)。干旱区P95≈0-2mm，28mm已远超P99。触发时绕过flash_flood_risk门控，解决干旱区硬阈值漏检。需要precip_climatology.nc支持。"
+          "note": "降水百分位(基于365天格点气候态)。干旱区P95≈0-2mm过于严格, 降至P80以捕捉极端事件(如Jan6吉达28mm仅P90)。"
         },
         {
           "indicator": "cape",
@@ -56,10 +56,17 @@
         },
         {
           "indicator": "ds10_max_1h",
-          "op": ">=", "value": 10,
-          "weight": 0.08,
+          "op": ">=", "value": 5,
+          "weight": 0.15,
           "role": "concurrent",
-          "note": "卫星1h最大降水 — 短历时强降水已发生。Q4缺测时fallback降级。"
+          "note": "卫星1h最大降水(GPM IMERG) — 干旱区极端降水常有高30min峰值但1h均值被平滑, 阈值10→5mm。权重0.08→0.15。"
+        },
+        {
+          "indicator": "ds10_max_30min",
+          "op": ">=", "value": 5,
+          "weight": 0.15,
+          "role": "concurrent",
+          "note": "卫星30min最大降水(GPM IMERG) — 捕捉短时强对流峰值, 对哈布尘暴后的暴雨和山区对流最敏感。新增条件。"
         }
       ],
       "connectivity": 4,
