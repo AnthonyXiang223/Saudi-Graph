@@ -82,12 +82,13 @@ def api_sparql_summary():
             elif "Event/" in s_str:
                 ntype = "Event"
 
-            clean_id = node_id.split("/")[-1]  # strip type prefix
+            # Use full path as ID to avoid duplicates (e.g., DataSource/DS1 vs Sensor/DS1)
+            clean_id = node_id  # Keep type prefix for uniqueness
             nodes.append({
                 "id": clean_id,
                 "type": ntype,
                 "group": ntype,
-                "label": clean_id if len(clean_id) <= 30 else clean_id[:28]+"…",
+                "label": clean_id.split("/")[-1] if len(clean_id.split("/")[-1]) <= 30 else clean_id.split("/")[-1][:28]+"…",
                 "title": node_id,
             })
 
@@ -109,8 +110,8 @@ def api_sparql_summary():
             continue
         if rel and PREFIX in s_str and PREFIX in o_str:
             edges.append({
-                "from": str(s).split("#")[-1].split("/")[-1],
-                "to": str(o).split("#")[-1].split("/")[-1],
+                "from": str(s).split("#")[-1],
+                "to": str(o).split("#")[-1],
                 "label": rel,
                 "arrows": "to,from" if rel == "co_occurs_with" else "to",
             })

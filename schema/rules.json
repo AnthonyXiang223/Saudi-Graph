@@ -10,14 +10,21 @@
     {
       "id": "flash_flood_weighted",
       "hazard_type": "flash_flood",
-      "description": "山洪检测 — causal条件(对流环境+水汽)为提前量，concurrent条件(降水实况)确认正在发生。flash_flood_risk作为综合门控。",
+      "description": "山洪检测 — causal条件(对流环境+水汽)为提前量，concurrent条件(降水实况)确认正在发生。precip_percentile概率化门控可在flash_flood_risk不满足时绕过门控。",
       "conditions": [
         {
           "indicator": "flash_flood_risk",
-          "op": ">=", "value": 3,
+          "op": ">=", "value": 2,
           "weight": 0.30, "primary": true,
           "role": "derived_gate",
-          "note": "综合5个阈值得分(0-5)，≥3为门控条件。作为后果指标不作为权重贡献，仅做门控。"
+          "note": "综合5个阈值得分(0-5)，原阈值3→2(基于2025年ground truth验证: Jan 6吉达28mm洪水中flash_flood_risk仅=2导致漏检)。降低以扩大捕捉窗口。"
+        },
+        {
+          "indicator": "precip_percentile",
+          "op": ">=", "value": 95,
+          "weight": 0.30,
+          "role": "probabilistic_gate",
+          "note": "降水百分位(基于365天格点气候态)。干旱区P95≈0-2mm，28mm已远超P99。触发时绕过flash_flood_risk门控，解决干旱区硬阈值漏检。需要precip_climatology.nc支持。"
         },
         {
           "indicator": "cape",
@@ -73,7 +80,7 @@
     {
       "id": "extreme_heat_weighted",
       "hazard_type": "extreme_heat",
-      "description": "极端高温检测 — causal条件(大气干燥度+异常偏暖)为提前信号，concurrent条件(实际高温)确认。heat_index_c作为后果指标排除。",
+      "description": "极端高温检测 — causal条件(大气干燥度+异常偏暖)为提前信号，concurrent条件(实际高温)确认。heat_gpd_prob GPD概率化门控捕获超阈值极端高温。",
       "conditions": [
         {
           "indicator": "heatwave_day_flag",
@@ -81,6 +88,13 @@
           "weight": 0.30, "primary": true,
           "role": "derived_gate",
           "note": "热浪日标志(tmax≥max(40°C,气候态+5°C))。综合门控，保留0.30。"
+        },
+        {
+          "indicator": "heat_gpd_prob",
+          "op": "<=", "value": 0.05,
+          "weight": 0.30,
+          "role": "probabilistic_gate",
+          "note": "GPD极端高温概率 P(T>tmax)。≤0.05时触发绕过heatwave_day_flag门控。基于2025年ground truth验证: 达曼6/30 tmax=45.6°C → GPD P=0.003(EXTREME)。指标缺失时heatwave_day_flag仍作为fallback。需要heat_gpd_climatology.nc。"
         },
         {
           "indicator": "vpd_kpa",
@@ -126,7 +140,7 @@
     {
       "id": "dust_storm_weighted",
       "hazard_type": "dust_storm",
-      "description": "沙尘强风检测 — 全部条件均为因果指标(近地面风+干燥度+高空动力)。无后果/衍生指标问题。",
+      "description": "沙尘强风检测 — 全部条件均为因果指标(近地面风+干燥度+高空动力)。dust_joint_prob Copula联合概率门控可覆盖Shamal大尺度沙尘。Haboob类对流沙尘需额外CAPE指标。",
       "conditions": [
         {
           "indicator": "wind10_speed",
@@ -134,6 +148,13 @@
           "weight": 0.35, "primary": true,
           "role": "causal",
           "note": "10m风速 — 起沙的直接动力。无数据驱动标签(沙尘缺乏标注样本)，保留专家赋值。"
+        },
+        {
+          "indicator": "dust_joint_prob",
+          "op": ">=", "value": 0.50,
+          "weight": 0.30,
+          "role": "probabilistic_gate",
+          "note": "Copula联合概率 P_dust = min(F_wind, F_dew, F_1/rh, F_shear)，≥0.50时绕过primary gate。基于2025年ground truth验证: Shamal沙尘joint=0.55-0.70，安静期=0.00-0.13，分离度5-10x。Haboob(5月4日)因对流性起沙机制不同仍会漏检。需要dust_joint_climatology.nc支持。"
         },
         {
           "indicator": "dewpoint_depression_c",
@@ -175,7 +196,7 @@
     {
       "id": "coastal_humid_heat_weighted",
       "hazard_type": "coastal_humid_heat",
-      "description": "沿海湿热检测 — causal条件(海温+湿度)均为提前量。仅适用于红海和波斯湾沿岸。",
+      "description": "沿海湿热检测 — causal条件(海温+湿度)均为提前量。humid_heat_joint_prob Copula联合概率覆盖复合极端(高温+高湿+低风+暖海水同时触发)。仅适用于红海和波斯湾沿岸。",
       "conditions": [
         {
           "indicator": "sst_celsius",
@@ -183,6 +204,13 @@
           "weight": 0.35, "primary": true,
           "role": "causal",
           "note": "海表温度 — 沿海湿热的热源。SST≥30°C为海水蒸发提供充足能量。提高权重至0.35以强化热源门控。"
+        },
+        {
+          "indicator": "humid_heat_joint_prob",
+          "op": "<=", "value": 0.05,
+          "weight": 0.30,
+          "role": "probabilistic_gate",
+          "note": "湿热Copula联合概率 P=min(F_sst,F_rh,F_t2m,F_1/wind)。≤0.05时触发绕过sst门控。2025验证: 达曼6/30 joint=0.005(极端), 延布8/23 joint=0.785(全年峰值)。仅沿海格点有效。需要humid_heat_joint_climatology.nc。"
         },
         {
           "indicator": "rh2m",

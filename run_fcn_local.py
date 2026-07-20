@@ -19,15 +19,20 @@ SAUDI_LON = (34.0, 56.0)
 class LocalERA5Source:
     """earth2studio-compatible data source wrapping CDS ERA5 NetCDF files."""
 
-    def __init__(self, date_str: str, model_type: str = "pangu"):
+    def __init__(self, date_str: str, model_type: str = "pangu", crop: bool = False):
         self.date = date_str
         self.model_type = model_type
+        self.crop = crop
         date_compact = date_str.replace("-", "")
         self.sfc = xr.open_dataset(os.path.join(ERA5_DIR, f"era5_surface_{date_compact}.nc"))
         self.pl  = xr.open_dataset(os.path.join(ERA5_DIR, f"era5_pressure_{date_compact}.nc"))
 
     def __call__(self, time, variable):
-        """Return xarray DataArray with dims (time, variable, lat, lon)."""
+        """Return DataArray with dims (time, variable, lat, lon).
+
+        If crop=True, extracts Middle East region and embeds into global grid
+        (drastically reduces memory for Pangu/Atlas on 8GB GPUs).
+        """
         arrays = []; var_names = []
         for v in variable:
             da = self._get_var(v)
@@ -35,9 +40,35 @@ class LocalERA5Source:
             arrays.append(da.values)
             var_names.append(v)
 
-        stacked = np.stack(arrays)
+        if self.crop:
+            # Middle East 0-50N, 10-70E → embed into 721×1440 global grid
+            sfc_lat = self.sfc["latitude"].values
+            sfc_lon = self.sfc["longitude"].values
+            lat0 = np.argmin(np.abs(sfc_lat - 50))  # northern edge
+            lat1 = np.argmin(np.abs(sfc_lat - 0))   # southern edge
+            lon0 = np.argmin(np.abs(sfc_lon - 10))  # western edge
+            lon1 = np.argmin(np.abs(sfc_lon - 70))  # eastern edge
+
+            global_lat = np.arange(90, -90.25, -0.25)
+            global_lon = np.arange(0, 360, 0.25)
+            glat0 = np.argmin(np.abs(global_lat - sfc_lat[lat0]))
+            glat1 = np.argmin(np.abs(global_lat - sfc_lat[lat1]))
+            glon0 = np.argmin(np.abs(global_lon - sfc_lon[lon0]))
+            glon1 = np.argmin(np.abs(global_lon - sfc_lon[lon1]))
+
+            global_arr = np.zeros((len(var_names), len(global_lat), len(global_lon)), dtype=np.float32)
+            for i in range(len(var_names)):
+                global_arr[i, glat0:glat1, glon0:glon1] = arrays[i][lat0:lat1, lon0:lon1]
+
+            return xr.DataArray(
+                global_arr[np.newaxis, ...],
+                dims=["time", "variable", "lat", "lon"],
+                coords={"time": time, "variable": var_names, "lat": global_lat, "lon": global_lon},
+            )
+
         lat = self.sfc["latitude"].values
         lon = self.sfc["longitude"].values
+        stacked = np.stack(arrays)
         return xr.DataArray(
             stacked[np.newaxis, ...],
             dims=["time", "variable", "lat", "lon"],
@@ -66,20 +97,24 @@ class LocalERA5Source:
         raise KeyError(f"Unknown variable: {v}")
 
 
-def run(date: str, days: int = 3, model_name: str = "pangu6"):
+def run(date: str, days: int = 3, model_name: str = "pangu6", crop: bool = False):
     from earth2studio.run import deterministic
     from earth2studio.io import NetCDF4Backend
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    print(f"加载本地 ERA5: {date}")
-    data = LocalERA5Source(date, model_name)
+    print(f"加载本地 ERA5: {date}{' (中东区域裁切)' if crop else ''}")
+    data = LocalERA5Source(date, model_name, crop=crop)
 
     # Load model
     if model_name == "pangu6":
         from earth2studio.models.px import Pangu6
         print("模型: Pangu-Weather (华为, 6h 步长)")
         model = Pangu6.load_model(Pangu6.load_default_package())
+    elif model_name == "fengwu":
+        from earth2studio.models.px import FengWu
+        print("模型: FengWu (复旦, ONNX)")
+        model = FengWu.load_model(FengWu.load_default_package())
     elif model_name == "fcn":
         from earth2studio.models.px import FCN
         print("模型: FourCastNet v1")
@@ -121,8 +156,9 @@ def main():
     parser.add_argument("--date", type=str, required=True)
     parser.add_argument("--days", type=int, default=3)
     parser.add_argument("--model", type=str, default="pangu6")
+    parser.add_argument("--crop", action="store_true", help="中东区域裁切（省显存）")
     args = parser.parse_args()
-    run(date=args.date, days=args.days, model_name=args.model)
+    run(date=args.date, days=args.days, model_name=args.model, crop=args.crop)
 
 
 if __name__ == "__main__":

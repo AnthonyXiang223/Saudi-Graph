@@ -63,6 +63,10 @@ class EventDetector:
         self.data = datalayer
         self.events: List[Event] = []
         self._event_counter = 0
+        self._climatology = None  # Lazy-loaded precip climatology
+        self._dust_climatology = None  # Lazy-loaded dust copula climatology
+        self._heat_climatology = None  # Lazy-loaded heat GPD climatology
+        self._humid_climatology = None  # Lazy-loaded humid heat copula
 
     def detect_events(self, date_str: str,
                       hazard_types: Optional[List[str]] = None) -> List[Event]:
@@ -127,6 +131,7 @@ class EventDetector:
         confidence = 1.0
         trigger_details = []
         primary_mask = None  # Gate: primary condition must be met
+        prob_gate_mask = None  # Probabilistic gate: bypass primary gate when triggered
 
         for cond in conditions:
             indicator = cond["indicator"]
@@ -134,6 +139,117 @@ class EventDetector:
             threshold = cond["value"]
             weight = cond.get("weight", 0.0)
             is_primary = cond.get("primary", False)
+            role = cond.get("role", "")
+
+            # ── Handle humid_heat_joint_prob (Copula probabilistic gate) ──
+            if indicator == "humid_heat_joint_prob":
+                hh_data = self._compute_humid_heat_joint(ds, lat, lon, nlat, nlon)
+                if hh_data is not None:
+                    mask = self._eval_condition(hh_data, comp_op, threshold)
+                    prob_gate_mask = (prob_gate_mask | mask) if prob_gate_mask is not None else mask
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "condition": f"{comp_op} {threshold}",
+                        "weight": weight,
+                        "primary": False,
+                        "role": role,
+                        "cells_triggered": int(mask.sum()),
+                        "peak_value": float(np.nanmin(hh_data)) if np.any(~np.isnan(hh_data)) else None,
+                        "status": "evaluated",
+                        "note": "湿热Copula联合概率: P=min(F_sst,F_rh,F_t2m,F_1/wind), 仅沿海格点有效"
+                    })
+                    risk_score += weight * mask.astype(float)
+                    total_weight += weight
+                else:
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "status": "missing",
+                        "action": "humid_heat_joint_climatology.nc not found"
+                    })
+                continue
+
+            # ── Handle heat_gpd_prob (GPD probabilistic gate) ──
+            if indicator == "heat_gpd_prob":
+                gpd_data = self._compute_heat_gpd(ds, lat, lon, nlat, nlon)
+                if gpd_data is not None:
+                    # heat_gpd_prob uses "<=" (P<=0.05 means extreme)
+                    mask = self._eval_condition(gpd_data, comp_op, threshold)
+                    prob_gate_mask = (prob_gate_mask | mask) if prob_gate_mask is not None else mask
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "condition": f"{comp_op} {threshold}",
+                        "weight": weight,
+                        "primary": False,
+                        "role": role,
+                        "cells_triggered": int(mask.sum()),
+                        "peak_value": float(np.nanmin(gpd_data)) if np.any(~np.isnan(gpd_data)) else None,
+                        "status": "evaluated",
+                        "note": "GPD极端高温概率: P<=0.05触发, P<=0.01极端。基于Peaks-Over-Threshold模型。"
+                    })
+                    risk_score += weight * mask.astype(float)
+                    total_weight += weight
+                else:
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "status": "missing",
+                        "action": "heat_gpd_climatology.nc not found, GPD gate disabled"
+                    })
+                continue
+
+            # ── Handle dust_joint_prob (Copula probabilistic gate) ──
+            if indicator == "dust_joint_prob":
+                joint_data = self._compute_dust_joint_prob(ds, lat, lon, nlat, nlon)
+                if joint_data is not None:
+                    mask = self._eval_condition(joint_data, comp_op, threshold)
+                    prob_gate_mask = (prob_gate_mask | mask) if prob_gate_mask is not None else mask
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "condition": f"{comp_op} {threshold}",
+                        "weight": weight,
+                        "primary": False,
+                        "role": role,
+                        "cells_triggered": int(mask.sum()),
+                        "peak_value": float(np.nanmax(joint_data)) if np.any(~np.isnan(joint_data)) else None,
+                        "status": "evaluated",
+                        "note": "Copula联合概率: P=min(F_wind,F_dew,F_1/rh,F_shear), 触发时绕过wind10_speed门控"
+                    })
+                    risk_score += weight * mask.astype(float)
+                    total_weight += weight
+                else:
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "status": "missing",
+                        "action": "dust_joint_climatology.nc not found, copula gate disabled"
+                    })
+                continue
+
+            # ── Handle precip_percentile (probabilistic gate) ──
+            if indicator == "precip_percentile":
+                pct_data = self._compute_precip_percentile(ds, lat, lon, nlat, nlon)
+                if pct_data is not None:
+                    mask = self._eval_condition(pct_data, comp_op, threshold)
+                    prob_gate_mask = mask
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "condition": f"{comp_op} {threshold}",
+                        "weight": weight,
+                        "primary": False,
+                        "role": role,
+                        "cells_triggered": int(mask.sum()),
+                        "peak_value": float(np.nanmax(pct_data)) if np.any(~np.isnan(pct_data)) else None,
+                        "status": "evaluated",
+                        "note": "概率化门控: 触发时绕过flash_flood_risk门控"
+                    })
+                    # Also contribute to risk score
+                    risk_score += weight * mask.astype(float)
+                    total_weight += weight
+                else:
+                    trigger_details.append({
+                        "indicator": indicator,
+                        "status": "missing",
+                        "action": "precip_climatology.nc not found, probabilistic gate disabled"
+                    })
+                continue
 
             # Check if indicator is available in the dataset
             if indicator not in ds.variables:
@@ -197,9 +313,14 @@ class EventDetector:
                 "status": "evaluated"
             })
 
-        # Final gate: if primary condition not met, cap risk at 0.2 (below all severity thresholds)
+        # Final gate: if primary condition not met, cap risk at 0.25
+        # BUT: cells where probabilistic gate triggered are treated as gate-passed
         if primary_mask is not None:
-            risk_score = np.where(primary_mask, risk_score, risk_score * 0.25)
+            # Merge probabilistic gate into primary: either traditional gate OR prob gate passes
+            effective_gate = primary_mask
+            if prob_gate_mask is not None:
+                effective_gate = primary_mask | prob_gate_mask
+            risk_score = np.where(effective_gate, risk_score, risk_score * 0.25)
             risk_score = np.clip(risk_score, 0, 1.0)
 
         # Normalize risk score
@@ -267,6 +388,335 @@ class EventDetector:
             events.append(event)
 
         return events
+
+    def _compute_humid_heat_joint(self, ds, lat, lon, nlat, nlon):
+        """
+        Compute coastal humid heat joint probability via Copula.
+
+        P = min(F_sst, F_rh, F_t2m, F_1/wind)
+        where F_1/wind is the rank of negative wind speed (low wind → extreme).
+        Only meaningful for coastal cells (Red Sea + Persian Gulf).
+
+        Returns:
+            2D array of joint probability (0-1), lower = more extreme, or None.
+        """
+        import os
+
+        if self._humid_climatology is None:
+            clim_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "forecast", "humid_heat_joint_climatology.nc")
+            if not os.path.exists(clim_path):
+                return None
+            import xarray as xr
+            self._humid_climatology = xr.open_dataset(clim_path)
+
+        # Indicator → (clim_var, direction)
+        ind_map = {
+            "sst_celsius":  ("sst_pct",  1),
+            "rh2m":         ("rh2m_pct",  1),
+            "t2m_c":        ("t2m_pct",   1),
+            "wind10_speed": ("wind10_pct", -1),
+        }
+
+        # Check availability
+        available = []
+        for ind, (clim_var, direc) in ind_map.items():
+            if ind in ds.variables and clim_var in self._humid_climatology:
+                available.append((ind, clim_var, direc))
+
+        if len(available) < 3:
+            return None
+
+        clim_pcts = self._humid_climatology["percentile"].values
+        pct_vals = clim_pcts / 100.0
+
+        nlat_c, nlon_c = nlat, nlon
+        ranks = []
+
+        for ind, clim_var, direc in available:
+            today = ds[ind].values
+            while today.ndim > 2:
+                today = today[0] if today.shape[0] == 1 else today.mean(axis=0)
+            today = today[:nlat, :nlon].astype(float)
+            if direc == -1:
+                today = -today
+
+            cell_pcts = self._humid_climatology[clim_var].values[:, :nlat, :nlon]
+            if direc == -1:
+                cell_pcts = -cell_pcts
+
+            rank = np.full((nlat_c, nlon_c), np.nan, dtype=float)
+            for i in range(nlat_c):
+                for j in range(nlon_c):
+                    tv = today[i, j]
+                    cp = cell_pcts[:, i, j]
+                    if not np.isfinite(tv) or not np.all(np.isfinite(cp)):
+                        continue
+                    idx = np.searchsorted(cp, tv)
+                    if idx <= 0:
+                        rank[i, j] = 0.01
+                    elif idx >= len(cp):
+                        rank[i, j] = 0.99
+                    else:
+                        lo_p, hi_p = pct_vals[idx-1], pct_vals[idx]
+                        lo_v, hi_v = cp[idx-1], cp[idx]
+                        frac = (tv - lo_v) / (hi_v - lo_v) if hi_v > lo_v else 0.5
+                        rank[i, j] = lo_p + frac * (hi_p - lo_p)
+
+            ranks.append(np.clip(rank, 0.0, 1.0))
+
+        if len(ranks) < 3:
+            return None
+
+        return np.min(ranks, axis=0)
+
+
+    def _compute_heat_gpd(self, ds, lat, lon, nlat, nlon):
+        """
+        Compute extreme heat GPD exceedance probability for each grid cell.
+
+        P = P(T > today_tmax) using the GPD Peaks-Over-Threshold model.
+        Small P means more extreme (P=0.01 = 1% chance of exceeding this tmax).
+        Uses the per-cell GPD parameters stored in heat_gpd_climatology.nc.
+
+        Returns:
+            2D numpy array of exceedance probabilities (0-1), or None if unavailable.
+        """
+        import os
+
+        if self._heat_climatology is None:
+            clim_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "forecast", "heat_gpd_climatology.nc")
+            if not os.path.exists(clim_path):
+                return None
+            import xarray as xr
+            self._heat_climatology = xr.open_dataset(clim_path)
+
+        # Get today's tmax
+        tmax_today = None
+        for var_name in ["tmax_c", "t2m_c"]:
+            if var_name in ds.variables:
+                v = ds[var_name].values
+                while v.ndim > 2:
+                    v = v[0] if v.shape[0] == 1 else v.max(axis=0)
+                tmax_today = v[:nlat, :nlon].astype(float)
+                break
+
+        if tmax_today is None:
+            return None
+
+        # Get GPD parameters
+        threshold = self._heat_climatology["gpd_threshold"].values[:nlat, :nlon]
+        shape = self._heat_climatology["gpd_shape"].values[:nlat, :nlon]
+        scale = self._heat_climatology["gpd_scale"].values[:nlat, :nlon]
+        exceed_rate = self._heat_climatology["exceedance_rate"].values[:nlat, :nlon]
+
+        # Compute GPD exceedance probability per cell
+        prob = np.full((nlat, nlon), np.nan, dtype=float)
+
+        for i in range(nlat):
+            for j in range(nlon):
+                t = tmax_today[i, j]
+                u = threshold[i, j]
+                s = scale[i, j]
+                xi = shape[i, j]
+                er = exceed_rate[i, j]
+
+                if not (np.isfinite(t) and np.isfinite(u) and u > 0
+                        and np.isfinite(s) and s > 0):
+                    continue
+
+                if t <= u:
+                    prob[i, j] = 1.0 - er  # below threshold → non-exceedance
+                else:
+                    excess = t - u
+                    if abs(xi) < 0.001:
+                        p = er * np.exp(-excess / s)
+                    else:
+                        arg = 1.0 + xi * excess / s
+                        if arg <= 0:
+                            p = 0.0  # beyond upper bound
+                        else:
+                            p = er * arg**(-1.0 / xi)
+                    prob[i, j] = float(np.clip(p, 0.0, 1.0))
+
+        return prob.astype(float)
+
+
+    def _compute_dust_joint_prob(self, ds, lat, lon, nlat, nlon):
+        """
+        Compute dust storm joint probability via Empirical Copula (Gumbel).
+
+        P_dust = min(F_wind, F_dew, F_1/rh, F_shear)
+
+        Estimates each indicator's empirical CDF rank by interpolating
+        today's value against the per-cell indicator percentiles stored
+        in dust_joint_climatology.nc.
+
+        Returns:
+            2D numpy array of joint probability (0-1), or None if unavailable.
+        """
+        import os
+
+        # Lazy-load dust copula climatology
+        if self._dust_climatology is None:
+            clim_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "forecast", "dust_joint_climatology.nc")
+            if not os.path.exists(clim_path):
+                return None
+            import xarray as xr
+            self._dust_climatology = xr.open_dataset(clim_path)
+
+        # Map: indicator → (clim_var_name, direction)
+        # direction 1 = higher→more extreme, -1 = lower→more extreme
+        ind_map = {
+            "wind10_speed":          ("wind10_pct",  1),
+            "dewpoint_depression_c": ("dewpoint_pct", 1),
+            "rh2m":                  ("rh2m_pct",    -1),
+            "wind_shear_850_200":    ("shear_pct",   1),
+        }
+
+        # Check which indicators are available today
+        available = []
+        for ind, (clim_var, direc) in ind_map.items():
+            if ind in ds.variables and clim_var in self._dust_climatology:
+                available.append((ind, clim_var, direc))
+
+        if len(available) < 3:  # need at least 3 of 4 indicators
+            return None
+
+        # Reference percentiles from climatology
+        clim_pcts = self._dust_climatology["percentile"].values  # [50, 75, 90, 95, 98, 99]
+        pct_vals = clim_pcts / 100.0  # Convert to 0-1 scale
+
+        nlat_c, nlon_c = nlat, nlon
+        joint_prob = np.full((nlat_c, nlon_c), np.nan, dtype=float)
+
+        # For each available indicator, compute rank
+        ranks = []
+        for ind, clim_var, direc in available:
+            if ind not in ds.variables or clim_var not in self._dust_climatology:
+                continue
+
+            # Today's value
+            today = ds[ind].values
+            while today.ndim > 2:
+                today = today[0] if today.shape[0] == 1 else today.mean(axis=0)
+            today = today[:nlat, :nlon].astype(float)
+
+            if direc == -1:
+                today = -today  # negate so higher = more extreme
+
+            # Per-cell percentiles from climatology
+            cell_pcts = self._dust_climatology[clim_var].values[:, :nlat, :nlon]  # (n_pct, lat, lon)
+            # Also negate if needed
+            if direc == -1:
+                cell_pcts = -cell_pcts
+
+            # Estimate rank by linear interpolation between stored percentiles
+            rank = np.full((nlat_c, nlon_c), np.nan, dtype=float)
+            for i in range(nlat_c):
+                for j in range(nlon_c):
+                    tv = today[i, j]
+                    cp = cell_pcts[:, i, j]
+                    if not np.isfinite(tv) or not np.all(np.isfinite(cp)):
+                        continue
+                    # Find where today falls among percentiles
+                    idx = np.searchsorted(cp, tv)
+                    if idx <= 0:
+                        rank[i, j] = 0.01  # below min percentile
+                    elif idx >= len(cp):
+                        rank[i, j] = 0.99  # above max percentile
+                    else:
+                        # Linear interpolation
+                        lo_pct = pct_vals[idx - 1]
+                        hi_pct = pct_vals[idx]
+                        lo_val = cp[idx - 1]
+                        hi_val = cp[idx]
+                        if hi_val > lo_val:
+                            frac = (tv - lo_val) / (hi_val - lo_val)
+                        else:
+                            frac = 0.5
+                        rank[i, j] = lo_pct + frac * (hi_pct - lo_pct)
+
+            ranks.append(np.clip(rank, 0.0, 1.0))
+
+        if len(ranks) < 3:
+            return None
+
+        # Gumbel copula: joint = min of all ranks
+        joint_prob = np.min(ranks, axis=0)
+
+        return joint_prob.astype(float)
+
+
+    def _compute_precip_percentile(self, ds, lat, lon, nlat, nlon):
+        """
+        Compute precipitation percentile for each grid cell based on climatology.
+
+        Loads precip_climatology.nc (lazy, cached) and compares today's
+        daily_precip_total against the per-cell Gamma-fitted percentile distribution.
+
+        Returns:
+            2D numpy array of percentile values (0-100), or None if unavailable.
+        """
+        import os
+
+        # Lazy-load climatology
+        if self._climatology is None:
+            clim_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "forecast", "precip_climatology.nc")
+            if not os.path.exists(clim_path):
+                return None
+            import xarray as xr
+            self._climatology = xr.open_dataset(clim_path)
+
+        # Get today's precipitation
+        precip_today = None
+        for var_name in ["daily_precip_total", "precip_proxy"]:
+            if var_name in ds.variables:
+                precip_today = ds[var_name].values
+                break
+
+        if precip_today is None:
+            return None
+
+        # Squeeze to 2D
+        while precip_today.ndim > 2:
+            precip_today = precip_today[0] if precip_today.shape[0] == 1 else precip_today.mean(axis=0)
+        precip_today = precip_today[:nlat, :nlon]
+
+        # Use method-of-moments Gamma CDF to compute percentile
+        # Percentile = P(X <= today_precip | shape, scale)
+        shape = self._climatology["gamma_shape"].values[:nlat, :nlon]
+        scale = self._climatology["gamma_scale"].values[:nlat, :nlon]
+
+        from scipy.stats import gamma as gamma_dist
+        percentile = np.zeros((nlat, nlon), dtype=np.float32)
+
+        # Vectorized: compute CDF for all cells with valid Gamma params
+        valid = np.isfinite(shape) & np.isfinite(scale) & (shape > 0) & (scale > 0)
+        if valid.any():
+            percentile[valid] = gamma_dist.cdf(
+                np.maximum(precip_today[valid], 0.001),
+                shape[valid],
+                scale=scale[valid]
+            ) * 100.0  # Convert to 0-100 scale
+
+        # For dry cells (no Gamma fit), use empirical: if precip > 0, it's >P90
+        dry_cells = ~valid
+        if dry_cells.any():
+            # Check empirical P90 from climatology
+            p90 = self._climatology["precip_percentiles"].values[2, :nlat, :nlon]  # P90
+            percentile[dry_cells] = np.where(
+                precip_today[dry_cells] >= p90[dry_cells], 95.0, 50.0)
+
+        return np.clip(percentile, 0.0, 100.0)
+
 
     def _eval_condition(self, data: np.ndarray, op_str: str, threshold: float) -> np.ndarray:
         """Evaluate a comparison on numpy array, handling NaN."""

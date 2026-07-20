@@ -192,17 +192,23 @@ button.time{background:#7c3aed;border-color:#7c3aed}
 </div>
 
 <script>
+window.onerror=function(m,s,l,c,e){document.getElementById("status").innerHTML='<span style=color:#ef4444>JS Error: '+m+' @ '+s+':'+l+'</span>';return false};
 let network, allNodes=[], allEdges=[];
 const TC={Indicator:"#3b82f6",DataSource:"#10b981",HazardType:"#ef4444",Region:"#f59e0b",Rule:"#8b5cf6",Event:"#f472b6"};
 
 async function init(){
+  try{
   setStatus("加载图谱...");
   const r=await fetch("/api/sparql/summary"),d=await r.json();
   allNodes=d.nodes;allEdges=d.edges;
   document.getElementById("nc").textContent=d.total_nodes;
   document.getElementById("ec").textContent=d.total_edges;
   document.getElementById("tc").textContent=d.triples;
+  setStatus(`加载完成: ${allNodes.length}节点, ${allEdges.length}边, 开始渲染...`);
+  if(typeof vis==="undefined"){setStatus("ERROR: vis-network.js 未加载");return;}
   draw(allNodes,allEdges);
+  setStatus("就绪 · 点击节点查看 DMDO-OWL 详情");
+  }catch(e){setStatus("ERROR: "+e.message);console.error(e);}
 }
 
 function draw(nodes,edges){
