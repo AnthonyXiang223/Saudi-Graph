@@ -8,6 +8,8 @@ import streamlit as st
 import json
 import os
 import sys
+import logging
+from context_manager import ContextManager
 
 # ── Page config ──
 st.set_page_config(
@@ -174,6 +176,8 @@ else:
     st.session_state.messages[0] = {"role": "system", "content": SYSTEM_PROMPT}
 if "display" not in st.session_state:
     st.session_state.display = []  # (role, content, tool_calls_data)
+if "ctx_manager" not in st.session_state:
+    st.session_state.ctx_manager = ContextManager(max_turns=6)
 
 # ═══════════════════════════════════════════════════════
 # Sidebar
@@ -402,89 +406,117 @@ else:
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        # ── Context window management ──
+        ctx = st.session_state.ctx_manager
+        st.session_state.messages = ctx.trim(st.session_state.messages)
+
         # Run agent
         with st.chat_message("assistant"):
-            with st.spinner("分析中..."):
-                from openai import OpenAI
+            from openai import OpenAI
 
-                client = OpenAI(
-                    api_key=API_KEY,
-                    base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            client = OpenAI(
+                api_key=API_KEY,
+                base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            )
+
+            from agent_tools import TOOLS as AGENT_TOOLS, dispatch_tool
+
+            # ReAct loop
+            display_tool_calls = []
+            final_content = ""
+            max_turns = 5
+            status_placeholder = st.empty()
+
+            for turn in range(max_turns):
+                status_placeholder.caption(f"⏳ 分析中... (第 {turn+1}/{max_turns} 轮)")
+
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=st.session_state.messages,
+                    tools=AGENT_TOOLS,
+                    tool_choice="auto",
                 )
+                msg = response.choices[0].message
 
-                from agent_tools import TOOLS as AGENT_TOOLS, dispatch_tool
-
-                # ReAct loop
-                display_tool_calls = []
-                final_content = ""
-                max_turns = 5
-
-                for turn in range(max_turns):
-                    response = client.chat.completions.create(
+                # ── 模型直接回答 → 流式输出 ──
+                if not msg.tool_calls:
+                    status_placeholder.caption("💬 生成回答中...")
+                    # 流式获取最终答案
+                    stream = client.chat.completions.create(
                         model="deepseek-chat",
                         messages=st.session_state.messages,
-                        tools=AGENT_TOOLS,
-                        tool_choice="auto",
+                        stream=True,
                     )
-                    msg = response.choices[0].message
+                    placeholder = st.empty()
+                    full_text = ""
+                    for chunk in stream:
+                        delta = chunk.choices[0].delta
+                        if delta.content:
+                            full_text += delta.content
+                            placeholder.markdown(full_text + "▌")
+                    placeholder.markdown(full_text)
+                    final_content = full_text
+                    status_placeholder.empty()
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": final_content}
+                    )
+                    break
 
-                    if not msg.tool_calls:
-                        final_content = msg.content
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": msg.content}
-                        )
-                        break
+                # ── 工具调用 ──
+                status_placeholder.caption(f"🔧 调用工具中...")
+                st.session_state.messages.append(msg)
 
-                    # Handle tool calls
-                    st.session_state.messages.append(msg)
+                for tc in msg.tool_calls:
+                    name = tc.function.name
+                    args = json.loads(tc.function.arguments)
+                    result = dispatch_tool(name, args)
+                    if len(result) > 3000:
+                        result = result[:3000] + "\n...(truncated)"
 
-                    for tc in msg.tool_calls:
-                        name = tc.function.name
-                        args = json.loads(tc.function.arguments)
-                        result = dispatch_tool(name, args)
-                        if len(result) > 4000:
-                            result = result[:4000] + "\n...(truncated)"
-
-                        st.session_state.messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": result,
-                        })
-                        display_tool_calls.append({
-                            "name": name,
-                            "args": args,
-                            "result": result,
-                        })
-                else:
-                    # Exceeded turns
                     st.session_state.messages.append({
-                        "role": "user",
-                        "content": "请基于上述工具返回的结果，给我一个简洁的总结。",
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
                     })
-                    response = client.chat.completions.create(
-                        model="deepseek-chat",
-                        messages=st.session_state.messages,
-                    )
-                    final_content = response.choices[0].message.content
+                    display_tool_calls.append({
+                        "name": name,
+                        "args": args,
+                        "result": result,
+                    })
 
-                # Display tool calls
-                if display_tool_calls:
-                    for tc in display_tool_calls:
-                        with st.expander(f"🔧 {tc['name']}", expanded=False):
-                            st.caption(f"参数: `{json.dumps(tc['args'], ensure_ascii=False)}`")
-                            render_tool_result(tc["name"], tc["result"])
+                    # 即时展示工具调用状态
+                    with st.expander(f"🔧 {name}", expanded=False):
+                        st.caption(f"参数: `{json.dumps(args, ensure_ascii=False)}`")
+                        render_tool_result(name, result)
 
-                # Display final answer
-                if final_content:
-                    st.markdown(final_content)
-                else:
-                    st.markdown("*（已获取数据，请查看上方工具结果）*")
-
-                # Save to display
-                st.session_state.display.append({
-                    "role": "assistant",
-                    "content": final_content,
-                    "tool_calls": display_tool_calls if display_tool_calls else None,
+            else:
+                # Exceeded turns — streaming fallback
+                status_placeholder.caption("💬 总结中...")
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": "请基于上述工具返回的结果，给我一个简洁的总结。",
                 })
+                stream = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=st.session_state.messages,
+                    stream=True,
+                )
+                placeholder = st.empty()
+                full_text = ""
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        full_text += delta.content
+                        placeholder.markdown(full_text + "▌")
+                placeholder.markdown(full_text)
+                final_content = full_text
+                status_placeholder.empty()
+
+            # Save to display
+            st.session_state.display.append({
+                "role": "assistant",
+                "content": final_content,
+                "tool_calls": display_tool_calls if display_tool_calls else None,
+            })
 
         st.rerun()

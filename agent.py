@@ -11,8 +11,18 @@ Setup:
 import json
 import os
 import sys
+import logging
 from openai import OpenAI
 from agent_tools import TOOLS, dispatch_tool
+from context_manager import ContextManager
+
+# ── Logging ──
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("mazu.agent")
 
 # ── 加载 API key ──
 if os.path.exists(".env"):
@@ -164,11 +174,12 @@ SYSTEM_PROMPT = _build_system_prompt()
 def chat():
     print("=" * 55)
     print("  MAZU 沙特极端天气预警助手")
-    print("  DeepSeek-V3 + KWG KG (12 tools)")
+    print("  DeepSeek-V3 + KWG KG | 流式输出 | 滑动窗口记忆")
     print("  输入 'quit' 退出, 'tools' 查看可用工具")
     print("=" * 55)
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    ctx = ContextManager(max_turns=6)
 
     while True:
         try:
@@ -190,8 +201,12 @@ def chat():
 
         messages.append({"role": "user", "content": user_input})
 
+        # ── Context window management ──
+        messages = ctx.trim(messages)
+
         # ── ReAct 循环（最多 5 轮工具调用） ──
         for turn in range(5):
+            # 非流式调用 → 快速判断是否需要工具
             response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=messages,
@@ -200,13 +215,26 @@ def chat():
             )
             msg = response.choices[0].message
 
-            # 模型直接回答（不需要工具）
+            # ── 模型直接回答（不需要工具）→ 流式输出最终答案 ──
             if not msg.tool_calls:
-                print(f"\n🤖 Agent: {msg.content}")
-                messages.append({"role": "assistant", "content": msg.content})
+                print(f"\n🤖 Agent: ", end="", flush=True)
+                # 重新以流式调用，获得逐 token 输出
+                stream = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=messages,
+                    stream=True,
+                )
+                full_content = ""
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        full_content += delta.content
+                        print(delta.content, end="", flush=True)
+                print()  # trailing newline
+                messages.append({"role": "assistant", "content": full_content})
                 break
 
-            # 模型要调用工具
+            # ── 模型要调用工具 ──
             print(f"\n  🔄 调用工具中...")
             messages.append(msg)
 
@@ -217,8 +245,8 @@ def chat():
 
                 result = dispatch_tool(name, args)
                 # 截断过长结果
-                if len(result) > 4000:
-                    result = result[:4000] + "\n...(truncated)"
+                if len(result) > 3000:
+                    result = result[:3000] + "\n...(truncated)"
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -229,10 +257,20 @@ def chat():
             # 超过 5 轮，强制总结
             print("\n🤖 Agent: 分析轮次较多，让我总结一下...")
             messages.append({"role": "user", "content": "请基于上述工具返回的结果，给我一个简洁的总结。"})
-            response = client.chat.completions.create(
-                model="deepseek-chat", messages=messages
+            # 流式输出总结
+            stream = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=messages,
+                stream=True,
             )
-            print(f"\n🤖 Agent: {response.choices[0].message.content}")
+            full_content = ""
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    full_content += delta.content
+                    print(delta.content, end="", flush=True)
+            print()
+            messages.append({"role": "assistant", "content": full_content})
 
 
 if __name__ == "__main__":
