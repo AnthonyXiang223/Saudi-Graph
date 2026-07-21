@@ -207,7 +207,10 @@ if "session_manager" not in st.session_state:
 sm = st.session_state.session_manager
 
 if "current_session_id" not in st.session_state:
-    # Cold start — create a new session
+    # Cold start — clean up empty sessions, create a new one
+    for s in sm.list_sessions():
+        if s["message_count"] == 0:
+            sm.delete_session(s["id"])
     st.session_state.current_session_id = sm.create_session()
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     st.session_state.display = []
@@ -228,19 +231,22 @@ with st.sidebar:
     st.subheader("💬 会话")
 
     if st.button("＋ 新建会话", use_container_width=True):
-        # Save current before switching
+        # Save current before switching (skip if empty)
         if st.session_state.display:
             sm.save_messages(
                 st.session_state.current_session_id,
                 st.session_state.messages,
                 st.session_state.display,
             )
+        else:
+            # Don't keep empty sessions
+            sm.delete_session(st.session_state.current_session_id)
         st.session_state.current_session_id = sm.create_session()
         st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         st.session_state.display = []
         st.rerun()
 
-    sessions = sm.list_sessions()
+    sessions = [s for s in sm.list_sessions() if s["message_count"] > 0]
     for s in sessions:
         is_active = s["id"] == st.session_state.current_session_id
         prefix = "▸ " if is_active else "  "
@@ -280,10 +286,6 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
-    st.title("🌍 MAZU")
-    st.caption("沙特多灾种早期预警系统")
-
-    st.divider()
 
     st.subheader("服务状态")
 
@@ -319,7 +321,6 @@ with st.sidebar:
         )
 
     st.divider()
-    st.caption("DeepSeek-V3 + ECMWF IFS + KWG")
 
 
 # ═══════════════════════════════════════════════════════
@@ -520,8 +521,6 @@ def render_tool_result(tool_name: str, result_str: str):
 # ═══════════════════════════════════════════════════════
 
 st.title("MAZU 沙特极端天气预警助手")
-st.caption("基于 KnowWhereGraph DMDO-OWL + ECMWF IFS + DeepSeek-V3")
-
 # Display chat history
 for entry in st.session_state.display:
     role = entry["role"]
