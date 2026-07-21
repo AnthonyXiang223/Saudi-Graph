@@ -9,7 +9,7 @@ import json
 import os
 import sys
 import logging
-from context_manager import ContextManager, stream_chat_completion
+from context_manager import ContextManager
 from session_manager import SessionManager
 
 # ── Page config ──
@@ -575,7 +575,7 @@ else:
 
             from agent_tools import TOOLS as AGENT_TOOLS, dispatch_tool, smart_truncate
 
-            # ★ ReAct loop — 一次流式调用同时处理 tool_calls 和文本
+            # ReAct loop — non-streaming
             display_tool_calls = []
             final_content = ""
             max_turns = 5
@@ -584,47 +584,21 @@ else:
             for turn in range(max_turns):
                 status_placeholder.caption(f"⏳ 分析中... (第 {turn+1}/{max_turns} 轮)")
 
-                # ★ 单次流式调用 — 不先调 non-streaming 再调 streaming
-                collected = ""
-                stream_msg = None
-
-                placeholder = st.empty()
-                for item in stream_chat_completion(
-                    client, "deepseek-chat", st.session_state.messages, AGENT_TOOLS
-                ):
-                    if isinstance(item, str):
-                        collected += item
-                        placeholder.markdown(collected + "▌")
-                    else:
-                        stream_msg = item
-
-                if stream_msg is None:
-                    continue
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=st.session_state.messages,
+                    tools=AGENT_TOOLS,
+                    tool_choice="auto",
+                )
+                msg = response.choices[0].message
 
                 # ── 工具调用 ──
-                if stream_msg.tool_calls:
+                if msg.tool_calls:
                     status_placeholder.caption("🔧 调用工具中...")
-                    # 清除中间文本 placeholder
-                    placeholder.empty()
 
-                    # 构造 assistant message
-                    tc_dicts = []
-                    for tc in stream_msg.tool_calls:
-                        tc_dicts.append({
-                            "id": tc.id,
-                            "type": tc.type,
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        })
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": stream_msg.content,
-                        "tool_calls": tc_dicts,
-                    })
+                    st.session_state.messages.append(msg)
 
-                    for tc in stream_msg.tool_calls:
+                    for tc in msg.tool_calls:
                         name = tc.function.name
                         args = json.loads(tc.function.arguments)
                         result = dispatch_tool(name, args)
@@ -646,37 +620,29 @@ else:
                             st.caption(f"参数: `{json.dumps(args, ensure_ascii=False)}`")
                             render_tool_result(name, result)
 
-                # ── 最终回答（文本已在流式中打印）──
+                # ── 最终回答 ──
                 else:
-                    placeholder.markdown(collected)
-                    final_content = stream_msg.content or collected
+                    final_content = msg.content or ""
                     status_placeholder.empty()
+                    st.markdown(final_content)
                     st.session_state.messages.append(
                         {"role": "assistant", "content": final_content}
                     )
                     break
 
             else:
-                # Exceeded max turns — streaming fallback
+                # Exceeded max turns — fallback
                 status_placeholder.caption("💬 总结中...")
                 st.session_state.messages.append({
                     "role": "user",
                     "content": "请基于上述工具返回的结果，给我一个简洁的总结。",
                 })
-                stream = client.chat.completions.create(
+                response = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=st.session_state.messages,
-                    stream=True,
                 )
-                placeholder = st.empty()
-                full_text = ""
-                for chunk in stream:
-                    delta = chunk.choices[0].delta
-                    if delta.content:
-                        full_text += delta.content
-                        placeholder.markdown(full_text + "▌")
-                placeholder.markdown(full_text)
-                final_content = full_text
+                final_content = response.choices[0].message.content or ""
+                st.markdown(final_content)
                 status_placeholder.empty()
 
             # Save to display

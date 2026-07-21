@@ -14,7 +14,7 @@ import sys
 import logging
 from openai import OpenAI
 from agent_tools import TOOLS, dispatch_tool, smart_truncate
-from context_manager import ContextManager, stream_chat_completion, estimate_messages_tokens
+from context_manager import ContextManager, estimate_messages_tokens
 
 # ── Logging ──
 logging.basicConfig(
@@ -246,7 +246,7 @@ SYSTEM_PROMPT = _build_system_prompt()
 def chat():
     print("=" * 55)
     print("  MAZU 沙特极端天气预警助手")
-    print("  DeepSeek-V3 + KWG KG | 流式输出 | 滑动窗口记忆")
+    print("  DeepSeek-V3 + KWG KG | 滑动窗口记忆")
     print("  输入 'quit' 退出, 'tools' 查看可用工具")
     print("=" * 55)
 
@@ -282,48 +282,22 @@ def chat():
                      turn + 1, len(messages),
                      estimate_messages_tokens(messages))
 
-            # ★ 一次流式调用同时处理 tool_calls 和文本输出
-            # 不再先 non-streaming 再 streaming — 省一半 API 调用
-            collected = ""
-            stream_msg = None
-
-            print(f"\n🤖 Agent: ", end="", flush=True)
-            for item in stream_chat_completion(
-                client, "deepseek-chat", messages, TOOLS
-            ):
-                if isinstance(item, str):
-                    collected += item
-                    print(item, end="", flush=True)
-                else:
-                    stream_msg = item
-
-            if stream_msg is None:
-                log.warning("[Turn %d] stream 未返回 StreamMessage", turn + 1)
-                continue
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=messages,
+                tools=TOOLS,
+                tool_choice="auto",
+            )
+            msg = response.choices[0].message
 
             # ── 模型要调用工具 ──
-            if stream_msg.tool_calls:
+            if msg.tool_calls:
                 log.info("[Turn %d] → %d 个工具调用",
-                         turn + 1, len(stream_msg.tool_calls))
+                         turn + 1, len(msg.tool_calls))
 
-                # 构造 assistant message 追加到对话历史
-                tc_dicts = []
-                for tc in stream_msg.tool_calls:
-                    tc_dicts.append({
-                        "id": tc.id,
-                        "type": tc.type,
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    })
-                messages.append({
-                    "role": "assistant",
-                    "content": stream_msg.content,
-                    "tool_calls": tc_dicts,
-                })
+                messages.append(msg)
 
-                for i, tc in enumerate(stream_msg.tool_calls):
+                for i, tc in enumerate(msg.tool_calls):
                     name = tc.function.name
                     args = json.loads(tc.function.arguments)
                     print(f"\n    📡 {name}({json.dumps(args, ensure_ascii=False)})")
@@ -338,11 +312,12 @@ def chat():
                     log.info("[Turn %d.%d] %s → %d chars (after truncation)",
                              turn + 1, i + 1, name, len(result))
 
-            # ── 模型直接给出最终回答（文本已在上面流式打印）──
+            # ── 模型直接给出最终回答 ──
             else:
-                log.info("[Turn %d] 最终回答 — %d chars", turn + 1, len(collected))
-                print()  # trailing newline
-                messages.append({"role": "assistant", "content": stream_msg.content})
+                log.info("[Turn %d] 最终回答 — %d chars",
+                         turn + 1, len(msg.content or ""))
+                print(f"\n🤖 Agent: {msg.content}")
+                messages.append({"role": "assistant", "content": msg.content})
                 break
 
         else:
@@ -350,20 +325,13 @@ def chat():
             log.info("[总结] 超过 5 轮，强制请求总结")
             print("\n🤖 Agent: 分析轮次较多，让我总结一下...")
             messages.append({"role": "user", "content": "请基于上述工具返回的结果，给我一个简洁的总结。"})
-            # 流式输出总结（无需 tools，直接 stream）
-            stream = client.chat.completions.create(
+            response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=messages,
-                stream=True,
             )
-            full_content = ""
-            for chunk in stream:
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    full_content += delta.content
-                    print(delta.content, end="", flush=True)
-            print()
-            messages.append({"role": "assistant", "content": full_content})
+            summary = response.choices[0].message.content
+            print(summary)
+            messages.append({"role": "assistant", "content": summary})
 
 
 if __name__ == "__main__":
