@@ -247,13 +247,13 @@ TOOLS = [
     },
 
     # ═══════════════════════════════════════════════════
-    # Event Detection — Forecast (FCN GPU inference)
+    # Event Detection — Forecast (IFS global)
     # ═══════════════════════════════════════════════════
     {
         "type": "function",
         "function": {
             "name": "detect_future_events",
-            "description": "基于 NVIDIA FourCastNet 本地 GPU 预报，检测未来几天的极端灾害风险。水汽辐合、降水代理等指标从大气状态物理推导。适用于'明天会有山洪吗''未来3天利雅得会有极端高温吗'等预报问题。",
+            "description": "基于 ECMWF IFS 全球预报(0.25°)检测未来几天的极端灾害风险。IFS 有完整大气变量覆盖全部四种灾害。适用于'明天会有山洪吗''未来3天利雅得会有极端高温吗'等预报问题。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -309,7 +309,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_city_weather",
-            "description": "获取指定城市在指定预报日的所有气象指标格点值。根据城市坐标找到最近的FCN网格点，返回温度、湿度、风、降水等可用指标的实际数值。适用于'利雅得今天多少度''吉达的湿度是多少'等问题。",
+            "description": "获取指定城市在指定预报日的所有气象指标格点值。根据城市坐标找到最近的IFS网格点，返回温度、湿度、风、降水等可用指标的实际数值。适用于'利雅得今天多少度''吉达的湿度是多少'等问题。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -364,7 +364,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "compare_with_history",
-            "description": "将当前 FCN 预报的灾害风险与2025年同期历史检测结果进行对比，评估今年相对于去年的异常程度。适用于'比去年热吗''今年沙尘风险是不是更高'等问题。",
+            "description": "将当前 IFS 预报的灾害风险与2025年同期历史检测结果进行对比，评估今年相对于去年的异常程度。适用于'比去年热吗''今年沙尘风险是不是更高'等问题。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -437,6 +437,27 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_city_hazards",
+            "description": "【城市天气查询首选】基于 IFS 预报对指定城市进行格点级灾害检测，返回四类灾害的严重度和逐条件判定结果。直接给出权威检测结论。当用户问某个城市今天天气或有没有灾害风险时，应优先调用此工具而非 get_city_weather。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "城市名(中文或英文), 如 '麦加'/'mecca', '吉达'/'jeddah', '利雅得'/'riyadh'"},
+                    "date": {"type": "string", "description": "IFS 初始日期 YYYYMMDD。留空则用最近可用日期。"},
+                    "hour": {"type": "integer", "description": "预报时次(0/12/24/...), 默认12(下午,最热时段)。0=午夜分析场。"},
+                    "hazard_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
+                        "description": "灾害类型列表, 不传则检测全部四种"
+                    }
+                },
+                "required": ["city"]
+            }
+        }
+    },
 
 ]
 
@@ -506,7 +527,7 @@ class ToolDispatcher:
             elif tool_name == "detect_ifs_forecast":
                 result = self._detect_from_ifs(arguments)
             elif tool_name == "detect_future_events":
-                result = self._detect_from_forecast(arguments)
+                result = self._detect_from_ifs(arguments)
 
             elif tool_name == "detect_forecast_sequence":
                 result = self._detect_sequence(arguments)
@@ -522,6 +543,8 @@ class ToolDispatcher:
 
             elif tool_name == "list_ifs_dates":
                 result = self._list_ifs_dates(arguments)
+            elif tool_name == "get_city_hazards":
+                result = self._get_city_hazards(arguments)
             elif tool_name == "lookup_city":
                 result = self._lookup_city_tool(arguments)
 
@@ -546,11 +569,11 @@ class ToolDispatcher:
             return json.dumps({"error": str(e), "tool": tool_name})
 
     # ═══════════════════════════════════════════════════════
-    # FCN forecast indicator computation
+    # IFS forecast indicator computation (legacy FCN loader — not used in IFS path)
     # ═══════════════════════════════════════════════════════
 
     def _load_indicators_fcn(self, nc_path: str, forecast_day: int) -> dict:
-        """Load FCN NetCDF → indicator arrays. Selects best lead_time for forecast_day."""
+        """[DEPRECATED] Load FCN NetCDF → indicator arrays. No longer used; IFS is the primary data source. Selects best lead_time for forecast_day."""
         import numpy as np, xarray as xr
 
         ds = xr.open_dataset(nc_path)
@@ -605,9 +628,9 @@ class ToolDispatcher:
             missing.append('wind_shear_850_200')
 
         # ═══════════════════════════════════════════════════
-        # Moisture & Precipitation Proxy from FCN atmospheric state
+        # Moisture & Precipitation Proxy (FCN atmospheric state — legacy, not used in IFS path)
         #
-        # FCN has no direct precipitation output, but precipitation is
+        # FCN has no direct precipitation output (legacy — IFS has full variables)
         # physically constrained by: water vapor × convergence × saturation.
         # We derive a proxy from:
         #   tcwv  → total column water vapor (kg/m² ≈ mm)
@@ -726,11 +749,36 @@ class ToolDispatcher:
         return th_map
 
     @staticmethod
+    @staticmethod
+    def _get_coastal_mask(lat_vals, lon_vals):
+        """Return boolean mask for Red Sea + Persian Gulf coastal grid cells."""
+        import numpy as np
+        nlat, nlon = len(lat_vals), len(lon_vals)
+        mask = np.zeros((nlat, nlon), dtype=bool)
+        for i in range(nlat):
+            for j in range(nlon):
+                lat, lon = lat_vals[i], lon_vals[j]
+                in_red_sea = (16 <= lat <= 30) and (34 <= lon <= 42)
+                in_gulf = (24 <= lat <= 30) and (48 <= lon <= 56)
+                mask[i, j] = in_red_sea or in_gulf
+        return mask
+
+    @staticmethod
     def _run_hazard_detection(indicators: dict, lat_vals, lon_vals,
                                rules_data: dict, hazard_types: list,
-                               region_calib: dict = None) -> list:
-        """Core detection: weighted scoring + primary gate + region calibration."""
+                               region_calib: dict = None,
+                               coastal_mask=None) -> list:
+        """Core detection: weighted scoring + primary gate + prob gate bypass + region calibration.
+
+        2026-07-21 fixes:
+        - Probabilistic gate bypass: prob gate trigger overrides primary gate penalty
+        - Coastal filter: coastal_humid_heat only evaluated on Red Sea / Persian Gulf cells
+        """
         import numpy as np
+
+        # Build coastal mask lazily (once per call, shared across hazard types)
+        if coastal_mask is None:
+            coastal_mask = ToolDispatcher._get_coastal_mask(lat_vals, lon_vals)
 
         results = []
         for htype in hazard_types:
@@ -816,21 +864,54 @@ class ToolDispatcher:
                 coverage_penalty = np.sqrt(coverage_ratio)
                 score = score * coverage_penalty
 
-            # Primary gate (region-calibrated, or absent-penalty)
+            # ── Primary gate + Probabilistic gate bypass ──
             primary_cond = next((c for c in rule["conditions"] if c.get("primary")), None)
+            prob_gate_cond = next((c for c in rule["conditions"] if c.get("role") == "probabilistic_gate"), None)
+
+            primary_hit = None
+            prob_gate_hit = None
+
             if primary_cond and primary_cond["indicator"] in indicators:
                 pdata = indicators[primary_cond["indicator"]]
                 if pdata.shape == score.shape:
                     pth_map = ToolDispatcher._build_region_threshold_map(
                         lat_vals, lon_vals, region_calib, htype,
                         primary_cond["indicator"], primary_cond["value"])
-                    pmask = pdata >= pth_map
-                    score = np.where(pmask, score, score * 0.25)
+                    primary_hit = pdata >= pth_map
+
+            if prob_gate_cond and prob_gate_cond["indicator"] in indicators:
+                gdata = indicators[prob_gate_cond["indicator"]]
+                if gdata.shape == score.shape:
+                    gth_map = ToolDispatcher._build_region_threshold_map(
+                        lat_vals, lon_vals, region_calib, htype,
+                        prob_gate_cond["indicator"], prob_gate_cond["value"])
+                    # Handle both >= and <= operators for prob gate
+                    gop = prob_gate_cond.get("op", ">=")
+                    if gop in (">=", ">"):
+                        prob_gate_hit = gdata >= gth_map
+                    else:
+                        prob_gate_hit = gdata <= gth_map
+
+            if primary_hit is not None:
+                # Cells where primary NOT met → suppress ×0.25
+                # UNLESS prob gate triggers (bypass)
+                not_primary = ~primary_hit
+                if prob_gate_hit is not None:
+                    bypass = prob_gate_hit
+                    suppress = not_primary & (~bypass)
+                else:
+                    suppress = not_primary
+                score[suppress] *= 0.25
             elif primary_cond:
                 # Primary gate unavailable → confidence penalty
                 score = score * 0.7
 
+            # ── Coastal region filter ──
+            if htype == "coastal_humid_heat":
+                score[~coastal_mask] = 0.0
+
             max_score = float(np.nanmax(score))
+            n_total = int(coastal_mask.sum()) if htype == "coastal_humid_heat" else score.size
             n_risky = int((score >= 0.2).sum())
 
             if np.isfinite(max_score):
@@ -849,6 +930,7 @@ class ToolDispatcher:
                 "max_risk_score": round(max_score, 3),
                 "severity": sev,
                 "grid_cells_at_risk": n_risky,
+                "total_cells": n_total,
                 "hotspot_lat": round(risky_lat, 1),
                 "hotspot_lon": round(risky_lon, 1),
                 "triggered_conditions": triggered,
@@ -941,11 +1023,11 @@ class ToolDispatcher:
         return results
 
     # ═══════════════════════════════════════════════════════
-    # Main forecast detection — FCN-only
+    # Main forecast detection — IFS-based (was FCN-only)
     # ═══════════════════════════════════════════════════════
 
     def _detect_from_forecast(self, args: dict) -> str:
-        """纯 FCN 本地 GPU 预报 + KG 物理一致性验证。"""
+        """[DEPRECATED] 纯 FCN 本地 GPU 预报 + KG 物理一致性验证。No longer called; _detect_from_ifs is the active path."""
         import numpy as np, os
 
         forecast_day = args.get("forecast_day", 1)
@@ -959,11 +1041,11 @@ class ToolDispatcher:
         schema_dir = os.path.join(project_dir, "schema")
         forecast_dir = os.path.join(project_dir, "forecast")
 
-        # ── 1. Load FCN forecast ──
+        # ── 1. Load FCN forecast (DEPRECATED — IFS path is active) ──
         fcn_path = os.path.join(forecast_dir, "fcn_forecast.nc")
         if not os.path.exists(fcn_path):
             return json.dumps({
-                "error": "FCN 预报文件不存在",
+                "error": "FCN 预报文件不存在（已弃用，请使用 IFS）",
                 "hint": "请在 WSL2 中运行: python run_fcn.py --days 7",
                 "expected_path": fcn_path,
             }, ensure_ascii=False)
@@ -1004,7 +1086,7 @@ class ToolDispatcher:
 
         # ── 6. Build output ──
         output = {
-            "forecast_source": "NVIDIA FourCastNet (本地 GPU)",
+            "forecast_source": "ECMWF IFS 0.25deg",
             "forecast_day": forecast_day,
             "lead_time_h": fcn_data.get("lead_time_h", "?"),
             "available_indicators": sorted(fcn_data["indicators"].keys()),
@@ -1038,7 +1120,7 @@ class ToolDispatcher:
                 "verdict": f"⚠ {len(inconsistent)} 类灾害物理不一致: {inconsistent}",
                 "confidence": "low",
                 "recommendation": (
-                    "FCN 预报中存在物理不一致的指标关系。建议: "
+                    "IFS 预报中存在物理不一致的指标关系。建议: "
                     "1) 使用 query_indicator_detail 检查相关指标的物理含义; "
                     "2) 用 query_hazard_indicators 确认灾害依赖的完整指标链; "
                     "3) 结合 detect_extreme_events 查看历史相似日期作为参考。"
@@ -1046,7 +1128,7 @@ class ToolDispatcher:
             }
         elif partial:
             output["synthesis"] = {
-                "verdict": f"FCN 预报物理一致性可接受 ({len(partial)} 类部分自洽)",
+                "verdict": f"IFS 预报物理一致性可接受 ({len(partial)} 类部分自洽)",
                 "confidence": "medium",
                 "recommendation": (
                     "部分指标关系未完全满足物理预期，但整体可接受。"
@@ -1055,10 +1137,10 @@ class ToolDispatcher:
             }
         else:
             output["synthesis"] = {
-                "verdict": "FCN 预报物理一致性良好",
+                "verdict": "IFS 预报物理一致性良好",
                 "confidence": "high",
                 "recommendation": (
-                    "FCN 各指标间物理关系自洽。可使用 query_indicator_chain "
+                    "IFS 各指标间物理关系自洽。可使用 query_indicator_chain "
                     "追溯任意指标的计算链，或 query_rule_detail 查看检测规则详情。"
                 ),
             }
@@ -1199,6 +1281,131 @@ class ToolDispatcher:
         dates = list_ifs_dates()
         return json.dumps({"available_dates": dates, "count": len(dates), "source": "aifs_forecasts/"}, ensure_ascii=False, indent=2)
 
+    def _get_city_hazards(self, args: dict) -> str:
+        """City-level IFS hazard detection — authoritative severity per city grid cell."""
+        if not HAS_IFS:
+            return json.dumps({"error": "IFS pipeline not installed"}, ensure_ascii=False)
+
+        import os, numpy as np, xarray as xr
+        from ifs_pipeline import evaluate_city_hazards, list_ifs_dates
+
+        city_name = args.get("city", "")
+        hour = args.get("hour", 12)  # default 12Z = afternoon peak
+        hazard_types = args.get("hazard_types")
+
+        # Lookup city
+        city = self._lookup_city(city_name)
+        if not city:
+            return json.dumps({
+                "error": f"未找到城市: {city_name}",
+                "hint": "使用 lookup_city 查看可用城市列表",
+            }, ensure_ascii=False)
+
+        # Find IFS date
+        date = args.get("date")
+        if date is None:
+            dates = list_ifs_dates()
+            if not dates:
+                return json.dumps({"error": "没有可用的IFS预报数据"}, ensure_ascii=False)
+            date = dates[-1]
+
+        # Load the requested hour's indicator file
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        ifs_dir = os.path.join(project_dir, "aifs_forecasts", date)
+        nc_path = os.path.join(ifs_dir, f"ifs_indicators_{date}_{hour}h.nc")
+
+        # Fallback: try 0h if requested hour not available
+        if not os.path.exists(nc_path):
+            available = [f for f in os.listdir(ifs_dir)
+                        if f.startswith("ifs_indicators_") and f.endswith(".nc")]
+            if available:
+                nc_path = os.path.join(ifs_dir, available[0])
+                # Parse hour from filename
+                import re
+                m = re.search(r'(\d+)h\.nc', available[0])
+                if m:
+                    hour = int(m.group(1))
+            else:
+                return json.dumps({"error": f"IFS 指标数据不存在: {date}/{hour}h"}, ensure_ascii=False)
+
+        ds = xr.open_dataset(nc_path)
+        lat = ds["lat"].values
+        lon = ds["lon"].values
+
+        # Load all indicators
+        ind = {}
+        for v in ds.data_vars:
+            arr = ds[v].values
+            if arr.ndim > 2:
+                arr = arr[0]
+            ind[v] = arr.astype(np.float64)
+
+        # Derived indicators (same as load_indicators_ifs)
+        if "tcwv" in ind and "pwat" not in ind:
+            ind["pwat"] = ind["tcwv"]
+        if "t2m" in ind and "t2m_c" not in ind:
+            ind["t2m_c"] = ind["t2m"]
+        if "t2m" in ind and "tmax_c" not in ind:
+            ind["tmax_c"] = ind["t2m"]
+        if "sst" in ind and "sst_celsius" not in ind:
+            ind["sst_celsius"] = ind["sst"]
+        if "t2m" in ind and "t2m_anomaly_c" not in ind:
+            ind["t2m_anomaly_c"] = ind["t2m"] - np.nanmean(ind["t2m"])
+        if "tmax_c" in ind and "heatwave_day_flag" not in ind:
+            ind["heatwave_day_flag"] = (ind["tmax_c"] >= 40).astype(np.float64)
+
+        # flash_flood_risk
+        if "flash_flood_risk" not in ind:
+            ff_risk = np.zeros_like(ind.get("t2m", np.zeros((len(lat), len(lon)))))
+            if "daily_precip_total" in ind:
+                ff_risk += (ind["daily_precip_total"] >= 10).astype(float)
+            if "pwat" in ind:
+                ff_risk += (ind["pwat"] >= 30).astype(float)
+            if "rh2m" in ind:
+                ff_risk += (ind["rh2m"] >= 70).astype(float)
+            ind["flash_flood_risk"] = ff_risk
+
+        # heat_gpd_prob from climatology
+        if "heat_gpd_prob" not in ind and "tmax_c" in ind:
+            clim_path = os.path.join(project_dir, "forecast", "heat_gpd_climatology.nc")
+            if os.path.exists(clim_path):
+                cds = xr.open_dataset(clim_path)
+                def _interp(var_name):
+                    da = xr.DataArray(cds[var_name].values, dims=["lat", "lon"],
+                                      coords={"lat": cds["lat"].values, "lon": cds["lon"].values})
+                    return da.interp(lat=lat, lon=lon, method="linear").values
+                thresh = _interp("gpd_threshold")
+                scale = _interp("gpd_scale")
+                exc_r = _interp("exceedance_rate")
+                prob = np.ones_like(ind["tmax_c"])
+                exceed = ind["tmax_c"] > thresh
+                if exceed.any():
+                    exc_val = ind["tmax_c"][exceed] - thresh[exceed]
+                    pe = np.exp(-exc_val / np.maximum(scale[exceed], 1.0))
+                    prob[exceed] = np.clip(pe * exc_r[exceed], 0, 1)
+                ind["heat_gpd_prob"] = prob
+                cds.close()
+
+        ds.close()
+
+        ifs_data = {
+            "indicators": ind,
+            "lat": lat,
+            "lon": lon,
+            "missing": [],
+            "lead_time_h": hour,
+        }
+
+        # Run city-level evaluation
+        result = evaluate_city_hazards(city_name, city, ifs_data, hazard_types)
+
+        # Add context metadata
+        result["forecast_source"] = f"ECMWF IFS 0.25deg, init {date}, +{hour}h"
+        result["city_region"] = city.get("region", "unknown")
+        result["note"] = "权威检测结论。severity 为最终判定，严禁 LLM 用先验知识覆盖。"
+
+        return json.dumps(result, ensure_ascii=False, indent=2)
+
     def _detect_sequence(self, args: dict) -> str:
         """Batch detection across multiple forecast days with trend analysis."""
         import os
@@ -1216,7 +1423,7 @@ class ToolDispatcher:
             day_args = {"forecast_day": day}
             if hazard_types:
                 day_args["hazard_types"] = hazard_types
-            raw = self._detect_from_forecast(day_args)
+            raw = self._detect_from_ifs(day_args)
             try:
                 daily_results.append({"forecast_day": day, "data": json.loads(raw)})
             except Exception:
@@ -1284,7 +1491,7 @@ class ToolDispatcher:
     # ═══════════════════════════════════════════════════════
 
     def _compare_with_history(self, args: dict) -> str:
-        """Compare FCN forecast with 2025 same-date historical detection."""
+        """Compare IFS forecast with 2025 same-date historical detection."""
         import os, datetime
 
         forecast_day = args.get("forecast_day", 1)
@@ -1293,7 +1500,7 @@ class ToolDispatcher:
             hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
 
         # 1. Run forecast detection
-        fc_raw = self._detect_from_forecast({"forecast_day": forecast_day, "hazard_types": hazard_types})
+        fc_raw = self._detect_from_ifs({"forecast_day": forecast_day, "hazard_types": hazard_types})
         try:
             fc_data = json.loads(fc_raw)
         except Exception:
@@ -1301,15 +1508,14 @@ class ToolDispatcher:
 
         # 2. Compute corresponding 2025 date
         today = datetime.date.today()
-        fcn_nc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forecast", "fcn_forecast.nc")
-        try:
-            import xarray as xr
-            with xr.open_dataset(fcn_nc) as f:
-                fcn_init = datetime.date.fromisoformat(str(f["time"].values[0])[:10])
-        except Exception:
-            fcn_init = today
+        # Get IFS init date (latest available)
+        ifs_dates = list_ifs_dates() if HAS_IFS else []
+        if ifs_dates:
+            ifs_init = datetime.date.fromisoformat(ifs_dates[-1])
+        else:
+            ifs_init = today
 
-        target_date = fcn_init + datetime.timedelta(days=forecast_day)
+        target_date = ifs_init + datetime.timedelta(days=forecast_day)
         year_ago = target_date.replace(year=2025)
         date_str = year_ago.strftime("%Y%m%d")
 
@@ -1360,15 +1566,20 @@ class ToolDispatcher:
             "forecast_date": target_date.isoformat(),
             "historical_date": date_str,
             "comparison": comparison,
-            "note": f"对比 2026 年 FCN 预报 vs 2025 年 ERA5 再分析检测。注意：数据源不同（预报 vs 再分析），对比结果反映相对异常程度，非严格同源对比。",
+            "note": f"对比 2026 年 IFS 预报 vs 2025 年 ERA5 再分析检测。注意：数据源不同（预报 vs 再分析），对比结果反映相对异常程度，非严格同源对比。",
         }, ensure_ascii=False, indent=2)
 
     def _get_city_weather(self, args: dict) -> str:
-        """Read all FCN indicators at the nearest grid cell to a city."""
+        """Read all IFS indicators at the nearest grid cell to a city."""
         import os, numpy as np
 
+        if not HAS_IFS:
+            return json.dumps({"error": "IFS pipeline not installed"}, ensure_ascii=False)
+
+        from ifs_pipeline import load_indicators_ifs, list_ifs_dates
+
         city_name = args.get("city", "")
-        forecast_day = args.get("forecast_day", 1)
+        forecast_day = args.get("forecast_day", 0)
         city = self._lookup_city(city_name)
 
         if not city:
@@ -1377,15 +1588,19 @@ class ToolDispatcher:
                 "hint": "使用 lookup_city 查看可用城市列表",
             }, ensure_ascii=False)
 
-        project_dir = os.path.dirname(os.path.abspath(__file__))
-        fcn_path = os.path.join(project_dir, "forecast", "fcn_forecast.nc")
-        if not os.path.exists(fcn_path):
-            return json.dumps({"error": "FCN 预报文件不存在"}, ensure_ascii=False)
+        # Auto-select latest IFS date
+        dates = list_ifs_dates()
+        if not dates:
+            return json.dumps({"error": "没有可用的IFS预报数据"}, ensure_ascii=False)
+        date = dates[-1]
 
-        fcn_data = self._load_indicators_fcn(fcn_path, forecast_day)
-        ind = fcn_data["indicators"]
-        lat = fcn_data["lat"]
-        lon = fcn_data["lon"]
+        ifs_data = load_indicators_ifs(date, forecast_day)
+        if ifs_data is None:
+            return json.dumps({"error": f"IFS数据不存在: {date}"}, ensure_ascii=False)
+
+        ind = ifs_data["indicators"]
+        lat = ifs_data["lat"]
+        lon = ifs_data["lon"]
 
         # Nearest grid cell
         d2 = np.sqrt((lat[:, None] - city["lat"])**2 +
@@ -1421,7 +1636,7 @@ class ToolDispatcher:
             "forecast_day": forecast_day,
             "lead_time_h": fcn_data.get("lead_time_h", "?"),
             "values": grouped,
-            "note": "FCN 网格预报值，0.25°分辨率，未经过地面站点订正",
+            "note": "IFS 网格预报值，0.25°分辨率，未经过地面站点订正",
         }, ensure_ascii=False, indent=2)
 
     def _lookup_city_tool(self, args: dict) -> str:
@@ -1642,7 +1857,7 @@ class ToolDispatcher:
         hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
 
         # Run full detection with region calibration
-        result = self._detect_from_forecast({
+        result = self._detect_from_ifs({
             "forecast_day": forecast_day,
             "hazard_types": hazard_types,
         })

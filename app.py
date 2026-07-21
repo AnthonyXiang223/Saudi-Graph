@@ -55,17 +55,21 @@ import datetime as _dt
 
 def _build_system_prompt():
     today = _dt.date.today()
-    fcn_init = today
-    fcn_nc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forecast", "fcn_forecast.nc")
-    if os.path.exists(fcn_nc):
-        try:
-            import xarray as xr
-            with xr.open_dataset(fcn_nc) as f:
-                fcn_time = str(f["time"].values[0])[:10]
-                fcn_init = _dt.date.fromisoformat(fcn_time)
-        except Exception:
-            pass
-    fcn_offset = max((today - fcn_init).days, 0)
+
+    # Auto-detect latest IFS date
+    ifs_init = today
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    ifs_dir = os.path.join(project_dir, "aifs_forecasts")
+    if os.path.isdir(ifs_dir):
+        import re as _re
+        ifs_dates = sorted([d for d in os.listdir(ifs_dir)
+                          if os.path.isdir(os.path.join(ifs_dir, d)) and _re.match(r'^\d{8}', d)])
+        if ifs_dates:
+            try:
+                ifs_init = _dt.date.fromisoformat(ifs_dates[-1])
+            except Exception:
+                pass
+    ifs_offset = max((today - ifs_init).days, 0)
 
     return f"""你是 MAZU 多灾种早期预警系统的气象分析助手，服务沙特阿拉伯气象预警业务。
 
@@ -74,8 +78,8 @@ def _build_system_prompt():
 ══════════════════════════════════════
 - 当前日期：{today.isoformat()}。用户说的"今天""明天"以此为准。
 - 历史数据：2025 年全年 ERA5 再分析（365 天 NetCDF，35,200 格点，~100 个指标）。
-- 预报数据：FCN 初始化于 {fcn_init.isoformat()}，forecast_day={fcn_offset} = 今天，明天 = {fcn_offset+1}，以此类推，最多覆盖初始化后 7 天。
-- FCN 输出 0.25°×0.25° 网格（65×89 沙特区域），6 小时间隔。无站点级订正，无水汽通量、CAPE、海温等输出。
+- 预报数据：ECMWF IFS 全球预报(0.25°)，初始化于 {ifs_init.isoformat()}，forecast_day={ifs_offset} = 今天，明天 = {ifs_offset+1}，以此类推，最多覆盖初始化后 7 天。
+- IFS 输出 0.25°×0.25° 全球网格，6 小时间隔。含完整大气变量（温度、湿度、风、降水、CAPE、海温等），变量覆盖远优于 FCN。
 
 ══════════════════════════════════════
 能力边界（严格区分"能"与"不能"）
@@ -90,9 +94,9 @@ def _build_system_prompt():
 - 区域、时间线、级联事件、溯源查询 → 对应的 GeoSPARQL/OWL-Time/PROV-O 工具
 
 ## 你完全无法回答的问题（直接说明能力不足，不要绕弯）
-- 任何涉及"实况""实测""实时""当前此刻"的问题 — 你只有 2025 年再分析和 FCN 预报，没有实时观测
+- 任何涉及"实况""实测""实时""当前此刻"的问题 — 你只有 2025 年再分析和 IFS 预报，没有实时观测
 - 卫星反演、雷达回波、土壤墒情、大气能见度 — 系统没有接入这些数据
-- 2 小时短临预报、30 天长期预测、干旱演变、复合灾害叠加 — 超出 FCN 预报范围
+- 2 小时短临预报、30 天长期预测、干旱演变、复合灾害叠加 — 超出 IFS 预报范围
 - 概率百分比、精确起止时间、能见度米数 — 系统只输出风险评分和严重度等级
 - 沙漠站点订正、卫星数据修正、数据融合推演 — 系统不具备这些算法
 - 行业影响量化（减产百分比、经济损失、通航风险评估）— 系统没有接入行业模型
@@ -100,7 +104,7 @@ def _build_system_prompt():
 - 双语/多语报告、热力图导出 — 系统不支持
 
 **应对策略**：当被问及上述问题时，这样回答：
-"当前系统不具备 [XX] 能力。以下基于 FCN 网格预报（或 ERA5 再分析），从 [已有数据的方面] 给出可用的分析："
+"当前系统不具备 [XX] 能力。以下基于 IFS 网格预报（或 ERA5 再分析），从 [已有数据的方面] 给出可用的分析："
 然后立即给出已有数据能支撑的部分，不要先说一堆"我做不到"再给结论。
 
 ## 你可以部分回答的问题（需要拆解 + 诚实标注）
@@ -108,10 +112,10 @@ def _build_system_prompt():
 
 | 用户问的是 | 你能做的是 | 必须标注的局限 |
 |---|---|---|
-| 沙漠无观测区温度 | 给出 FCN 格点预报温度值 | "FCN 网格预报值，沙漠区域再分析格点值通常低估地表实际温度 2-4℃" |
-| 红海对流信号 | 检测山洪风险 + 查看日降水量格点触发情况 | "基于 FCN 预报场，非卫星实测" |
+| 沙漠无观测区温度 | 给出 IFS 格点预报温度值 | "IFS 网格预报值，沙漠区域再分析格点值通常低估地表实际温度 2-4℃" |
+| 红海对流信号 | 检测山洪风险 + 查看日降水量格点触发情况 | "基于 IFS 预报场，非卫星实测" |
 | 港区 72h 高温/沙尘 | 逐日调用 detect_future_events 检测 | 每天检测是独立的，不构成时间序列推演 |
-| 干旱发展趋势 | 检查连续多日的日降水量和露点差 | "FCN 最多覆盖 7 天，无法做 10 天以上干旱趋势" |
+| 干旱发展趋势 | 检查连续多日的日降水量和露点差 | "IFS 最多覆盖 7 天，无法做 10 天以上干旱趋势" |
 | 区域差异化分析 | 分别对不同区域调用空间搜索 + 逐区域检测 | "阈值来自 rules.json，未做区域自适应校准" |
 | 行业影响评估 | 基于检测结果 + 沙特气候常识，给出定性业务建议 | "定性分析，非量化行业模型输出" |
 
@@ -151,7 +155,7 @@ def _build_system_prompt():
 2. **关键证据**：哪几个核心指标触发了判定？用数值说话。
 3. **风险分级**：严重度 + 影响区域 + 趋势。
 4. **建议**：1-2 条定性业务建议。
-5. **数据局限**（末尾一句）：标注 FCN/ERA5 的已知偏差。
+5. **数据局限**（末尾一句）：标注 IFS/ERA5 的已知偏差。
 
 ### 类型 B：解释/定义类（"极端高温是如何判断的""山洪检测规则是什么"）
 1. **结论先行**：先用一句话讲清楚"这件事靠什么判断"。
@@ -178,7 +182,7 @@ def _build_system_prompt():
 - 禁止使用英文变量名，必须用中文指标名称
 
 **不确定性声明模板**（必须使用以下标准表述，不要自创）：
-- FCN 预报 → "FCN 网格预报值，0.25° 分辨率，未经过地面站点订正"
+- IFS 预报 → "IFS 网格预报值，0.25° 分辨率，未经过地面站点订正"
 - ERA5 再分析 → "ERA5 再分析格点值，非地面气象站实测"
 - 指标缺失 → "XX 指标未纳入本次检测范围"（不要说"缺失"）
 
@@ -224,12 +228,16 @@ with st.sidebar:
         st.caption("请运行 `python dashboard/server.py`")
 
     import os as _os
-    fcn_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "forecast", "fcn_forecast.nc")
-    if _os.path.exists(fcn_path):
-        st.success("FCN 预报 · 就绪")
+    ifs_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "aifs_forecasts")
+    ifs_available = _os.path.isdir(ifs_dir) and any(
+        _os.path.isdir(_os.path.join(ifs_dir, d))
+        for d in _os.listdir(ifs_dir) if d[:1] != '.'
+    )
+    if ifs_available:
+        st.success("IFS 预报 · 就绪")
     else:
-        st.warning("FCN 预报 · 未生成")
-        st.caption("请在 WSL2 中运行 `python run_fcn.py --days 7`")
+        st.warning("IFS 预报 · 未就绪")
+        st.caption("请运行 IFS 下载脚本获取预报数据")
 
     st.divider()
 
@@ -241,7 +249,7 @@ with st.sidebar:
         )
 
     st.divider()
-    st.caption("DeepSeek-V3 + FourCastNet + KWG")
+    st.caption("DeepSeek-V3 + ECMWF IFS + KWG")
 
 
 # ═══════════════════════════════════════════════════════
@@ -319,7 +327,7 @@ def render_detection_results(data: dict):
         return
 
     # Header
-    st.markdown(f"**{data.get('forecast_source', 'FCN')}** · "
+    st.markdown(f"**{data.get('forecast_source', 'IFS')}** · "
                 f"Day +{data.get('forecast_day', '?')} · "
                 f"Lead {data.get('lead_time_h', '?')}h")
 
@@ -408,7 +416,7 @@ def render_tool_result(tool_name: str, result_str: str):
 # ═══════════════════════════════════════════════════════
 
 st.title("MAZU 沙特极端天气预警助手")
-st.caption("基于 KnowWhereGraph DMDO-OWL + NVIDIA FourCastNet + DeepSeek-V3")
+st.caption("基于 KnowWhereGraph DMDO-OWL + ECMWF IFS + DeepSeek-V3")
 
 # Display chat history
 for entry in st.session_state.display:
