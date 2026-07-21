@@ -48,7 +48,11 @@ def load_indicators_ifs(date_str, forecast_day=0):
             available = [f for f in os.listdir(subdir)
                         if f.startswith("ifs_indicators_") and f.endswith(".nc")]
             if available:
-                nc_path = os.path.join(subdir, available[0])  # take first available
+                import logging
+                logging.getLogger('mazu.ifs').warning(
+                    'Exact forecast hour %dh not found for %s, falling back to %s',
+                    step_h, date_str, available[0])
+                nc_path = os.path.join(subdir, available[0])
             else:
                 return None
         else:
@@ -221,14 +225,49 @@ def load_indicators_ifs(date_str, forecast_day=0):
         "lead_time_h": forecast_day * 24,
     }
 
+def _eval_condition(arr, op, th):
+    """Evaluate a single condition, returning a boolean mask. NaN-safe."""
+    if arr is None:
+        return np.zeros(1, dtype=bool)  # fallback
+    valid = ~np.isnan(arr)
+    result = np.zeros(arr.shape, dtype=bool)
+    if op == ">=":
+        result[valid] = arr[valid] >= th
+    elif op == ">":
+        result[valid] = arr[valid] > th
+    elif op == "<=":
+        result[valid] = arr[valid] <= th
+    elif op == "<":
+        result[valid] = arr[valid] < th
+    return result
+
+
+def _get_coastal_mask(lat_vals, lon_vals):
+    """Return boolean mask for Red Sea + Persian Gulf coastal grid cells."""
+    mask = np.zeros((len(lat_vals), len(lon_vals)), dtype=bool)
+    for i in range(len(lat_vals)):
+        for j in range(len(lon_vals)):
+            lat, lon = lat_vals[i], lon_vals[j]
+            in_red_sea = (16 <= lat <= 30) and (34 <= lon <= 42)
+            in_gulf = (24 <= lat <= 30) and (48 <= lon <= 56)
+            mask[i, j] = in_red_sea or in_gulf
+    return mask
+
+
 def detect_ifs_hazards(ifs_data, hazard_types=None):
-    """Run hazard detection on IFS indicators.
+    """Run hazard detection on IFS indicators with proper primary-gate logic.
+
+    Key improvements over v1:
+    - PRIMARY GATE: if primary condition NOT met, score × 0.25 (suppression)
+    - PROBABILISTIC BYPASS: if probabilistic gate triggers, suppresses the primary-gate penalty
+    - COASTAL FILTER: coastal_humid_heat only evaluated on Red Sea / Persian Gulf cells
+    - NaN-safe: NaN indicator values treated as "condition not met"
 
     Args:
         ifs_data: return value from load_indicators_ifs()
         hazard_types: list of hazard types, None = all
 
-    Returns: list of hazard results (same format as _run_hazard_detection)
+    Returns: list of hazard results
     """
     import numpy as np
 
@@ -238,16 +277,11 @@ def detect_ifs_hazards(ifs_data, hazard_types=None):
     if hazard_types is None:
         hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
 
-    # Load region calibration if available
-    region_calib = None
-    calib_path = os.path.join(SCHEMA_DIR, "region_calibration.json")
-    if os.path.exists(calib_path):
-        with open(calib_path, encoding="utf-8") as f:
-            region_calib = json.load(f)
-
     indicators = ifs_data["indicators"]
     lat_vals = ifs_data["lat"]
     lon_vals = ifs_data["lon"]
+    ref_shape = list(indicators.values())[0].shape
+    coastal_mask = _get_coastal_mask(lat_vals, lon_vals)
 
     results = []
     for htype in hazard_types:
@@ -255,14 +289,27 @@ def detect_ifs_hazards(ifs_data, hazard_types=None):
         if not rule:
             continue
 
-        # Check available conditions
-        available_conds = []
-        unavailable_conds = []
+        # Separate conditions by role
+        primary_cond = None
+        prob_gate_cond = None
+        regular_conds = []
+
         for cond in rule["conditions"]:
-            if cond["indicator"] in indicators:
-                available_conds.append(cond)
+            role = cond.get("role", "")
+            if role == "derived_gate" or cond.get("primary"):
+                primary_cond = cond
+            elif role == "probabilistic_gate":
+                prob_gate_cond = cond
             else:
-                unavailable_conds.append(cond["indicator"])
+                regular_conds.append(cond)
+
+        # Check availability
+        available_conds = [c for c in rule["conditions"] if c["indicator"] in indicators]
+        unavailable_conds = [c["indicator"] for c in rule["conditions"] if c["indicator"] not in indicators]
+
+        # Also check primary/prob gate availability
+        primary_available = primary_cond and primary_cond["indicator"] in indicators
+        prob_gate_available = prob_gate_cond and prob_gate_cond["indicator"] in indicators
 
         if len(available_conds) < 2:
             results.append({
@@ -273,8 +320,8 @@ def detect_ifs_hazards(ifs_data, hazard_types=None):
             })
             continue
 
-        ref_arr = list(indicators.values())[0]
-        score = np.zeros(ref_arr.shape, dtype=float)
+        # ── Compute weighted score ──
+        score = np.zeros(ref_shape, dtype=float)
         total_w = 0.0
         triggered = []
 
@@ -284,27 +331,44 @@ def detect_ifs_hazards(ifs_data, hazard_types=None):
             th = cond["value"]
             w = cond.get("weight", 1.0)
 
-            if op == ">=":
-                hit = arr >= th
-            elif op == ">":
-                hit = arr > th
-            elif op == "<=":
-                hit = arr <= th
-            elif op == "<":
-                hit = arr < th
-            else:
-                continue
-
+            hit = _eval_condition(arr, op, th)
             score += w * hit.astype(float)
             total_w += w
-            if w > 0.2:  # Major condition
+            if w > 0.2:
                 triggered.append(cond["indicator"])
 
-        # Normalize
         if total_w > 0:
             score /= total_w
 
-        # Apply region calibration thresholds
+        # ── Primary gate + Probabilistic bypass ──
+        primary_hit = None
+        prob_gate_hit = None
+
+        if primary_available:
+            arr = indicators[primary_cond["indicator"]]
+            primary_hit = _eval_condition(arr, primary_cond["op"], primary_cond["value"])
+
+        if prob_gate_available:
+            arr = indicators[prob_gate_cond["indicator"]]
+            prob_gate_hit = _eval_condition(arr, prob_gate_cond["op"], prob_gate_cond["value"])
+
+        if primary_hit is not None:
+            # Cells where primary is NOT met: suppress by ×0.25
+            # UNLESS the probabilistic gate triggers (bypass)
+            not_primary = ~primary_hit
+            if prob_gate_hit is not None:
+                # Prob gate bypass: don't suppress cells where prob gate triggers
+                bypass = prob_gate_hit
+                suppress = not_primary & (~bypass)
+            else:
+                suppress = not_primary
+            score[suppress] *= 0.25
+
+        # ── Region filter (coastal humid heat only) ──
+        if htype == "coastal_humid_heat":
+            score[~coastal_mask] = 0.0
+
+        # ── Severity thresholds ──
         thresholds = rule.get("severity", [
             {"label": "low", "range": [0.0, 0.3]},
             {"label": "medium", "range": [0.3, 0.6]},
@@ -312,25 +376,23 @@ def detect_ifs_hazards(ifs_data, hazard_types=None):
             {"label": "extreme", "range": [0.8, 1.0]},
         ])
 
-        # Find highest severity level triggered
         max_level = "none"
-        max_score_val = float(score.max())
+        max_score_val = float(score.max()) if score.size > 0 else 0.0
         for sev in thresholds:
             lo, hi = sev["range"]
             if max_score_val >= lo:
                 max_level = sev["label"]
 
-        # Count triggered grid cells
         n_cells = int(np.sum(score >= 0.3))
-        pct_cells = float(np.mean(score >= 0.3) * 100)
+        n_total = int(np.sum(coastal_mask)) if htype == "coastal_humid_heat" else score.size
+        pct_cells = float(n_cells / n_total * 100) if n_total > 0 else 0.0
 
-        # Find hotspots
+        # Hotspots
         if n_cells > 0:
             hotspot_idx = np.unravel_index(np.argmax(score), score.shape)
             hotspot_lat = float(lat_vals[hotspot_idx[0]])
             hotspot_lon = float(lon_vals[hotspot_idx[1]])
 
-            # Cluster detection (simple connected component)
             from scipy import ndimage
             mask = score >= 0.3
             labeled, n_clusters = ndimage.label(mask)
@@ -341,16 +403,25 @@ def detect_ifs_hazards(ifs_data, hazard_types=None):
             n_clusters = 0
             cluster_sizes = []
 
-        # Region mapping
         hotspot_region = _identify_region(hotspot_lat, hotspot_lon) if hotspot_lat else None
+
+        # Gate detail for transparency
+        gate_detail = {}
+        if primary_hit is not None:
+            gate_detail["primary_met_cells"] = int(np.sum(primary_hit))
+            gate_detail["primary_met_pct"] = round(float(np.mean(primary_hit) * 100), 1)
+        if prob_gate_hit is not None:
+            gate_detail["prob_gate_met_cells"] = int(np.sum(prob_gate_hit))
+            gate_detail["prob_gate_met_pct"] = round(float(np.mean(prob_gate_hit) * 100), 1)
 
         results.append({
             "hazard_type": htype,
             "detected": n_cells > 0,
             "severity": max_level,
-            "max_score": float(score.max()),
-            "mean_score": float(score.mean()),
+            "max_score": round(float(score.max()), 4),
+            "mean_score": round(float(score.mean()), 4),
             "cells_triggered": n_cells,
+            "total_cells": n_total,
             "triggered_pct": round(pct_cells, 1),
             "n_clusters": n_clusters,
             "cluster_sizes": cluster_sizes[:5],
@@ -359,9 +430,173 @@ def detect_ifs_hazards(ifs_data, hazard_types=None):
             "coverage": f"{len(available_conds)}/{len(rule['conditions'])}",
             "unavailable": unavailable_conds,
             "primary_triggers": triggered,
+            "gate_detail": gate_detail,
         })
 
     return results
+
+
+def evaluate_city_hazards(city_name, city_info, ifs_data, hazard_types=None):
+    """Evaluate hazards at a specific city's grid point (NOT regional hotspot).
+
+    Args:
+        city_name: e.g. 'mecca'
+        city_info: dict with 'lat', 'lon', 'label', 'region'
+        ifs_data: return value from load_indicators_ifs()
+        hazard_types: list of hazard types, None = all
+
+    Returns: dict with per-hazard results at the city's grid cell
+    """
+    import numpy as np
+
+    with open(os.path.join(SCHEMA_DIR, "rules.json"), encoding="utf-8") as f:
+        rules_data = json.load(f)
+
+    if hazard_types is None:
+        hazard_types = ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]
+
+    indicators = ifs_data["indicators"]
+    lat_vals = ifs_data["lat"]
+    lon_vals = ifs_data["lon"]
+    coastal_mask = _get_coastal_mask(lat_vals, lon_vals)
+
+    # Find nearest grid point
+    lat_idx = int(np.argmin(np.abs(lat_vals - city_info["lat"])))
+    lon_idx = int(np.argmin(np.abs(lon_vals - city_info["lon"])))
+    grid_lat = float(lat_vals[lat_idx])
+    grid_lon = float(lon_vals[lon_idx])
+    is_coastal = bool(coastal_mask[lat_idx, lon_idx])
+
+    city_results = {
+        "city": city_name,
+        "label": city_info.get("label", city_name),
+        "grid_point": f"{grid_lat:.2f}N, {grid_lon:.2f}E",
+        "is_coastal": is_coastal,
+        "lead_time_h": ifs_data.get("lead_time_h", "?"),
+        "hazards": {},
+    }
+
+    for htype in hazard_types:
+        rule = next((r for r in rules_data["rules"] if r["hazard_type"] == htype), None)
+        if not rule:
+            continue
+
+        # Separate conditions by role (same logic as detect_ifs_hazards)
+        primary_cond = None
+        prob_gate_cond = None
+
+        for cond in rule["conditions"]:
+            role = cond.get("role", "")
+            if role == "derived_gate" or cond.get("primary"):
+                primary_cond = cond
+            elif role == "probabilistic_gate":
+                prob_gate_cond = cond
+
+        # Evaluate each condition at this grid cell
+        cond_results = []
+        score = 0.0
+        total_w = 0.0
+
+        for cond in rule["conditions"]:
+            ind_name = cond["indicator"]
+            if ind_name not in indicators:
+                cond_results.append({
+                    "indicator": ind_name,
+                    "value": None,
+                    "threshold": f"{cond['op']} {cond['value']}",
+                    "met": None,
+                    "reason": "unavailable",
+                    "weight": cond.get("weight", 0),
+                })
+                continue
+
+            val = indicators[ind_name][lat_idx, lon_idx]
+            if hasattr(val, "item"):
+                val = val.item()
+            op = cond["op"]
+            th = cond["value"]
+            w = cond.get("weight", 1.0)
+
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                met = False
+                reason = "NaN"
+            else:
+                met = _eval_condition_at_point(val, op, th)
+                reason = "met" if met else "not_met"
+
+            if met:
+                score += w
+            total_w += w
+
+            cond_results.append({
+                "indicator": ind_name,
+                "value": round(val, 2) if isinstance(val, (int, float)) and not (isinstance(val, float) and np.isnan(val)) else None,
+                "threshold": f"{op} {th}",
+                "met": met,
+                "weight": w,
+            })
+
+        # Normalize
+        if total_w > 0:
+            score /= total_w
+
+        # Primary gate logic at point
+        primary_met = True  # default if no primary
+        prob_gate_met = False
+
+        if primary_cond and primary_cond["indicator"] in indicators:
+            pv = indicators[primary_cond["indicator"]][lat_idx, lon_idx]
+            if hasattr(pv, "item"):
+                pv = pv.item()
+            if pv is None or (isinstance(pv, float) and np.isnan(pv)):
+                primary_met = False
+            else:
+                primary_met = _eval_condition_at_point(pv, primary_cond["op"], primary_cond["value"])
+
+        if prob_gate_cond and prob_gate_cond["indicator"] in indicators:
+            gv = indicators[prob_gate_cond["indicator"]][lat_idx, lon_idx]
+            if hasattr(gv, "item"):
+                gv = gv.item()
+            if gv is not None and not (isinstance(gv, float) and np.isnan(gv)):
+                prob_gate_met = _eval_condition_at_point(gv, prob_gate_cond["op"], prob_gate_cond["value"])
+
+        if not primary_met and not prob_gate_met:
+            score *= 0.25
+
+        # Region filter for coastal humid heat
+        if htype == "coastal_humid_heat" and not is_coastal:
+            score = 0.0
+
+        # Severity
+        thresholds = rule.get("severity", [])
+        severity = "none"
+        for sev in thresholds:
+            lo, hi = sev["range"]
+            if score >= lo:
+                severity = sev["label"]
+
+        city_results["hazards"][htype] = {
+            "score": round(score, 4),
+            "severity": severity,
+            "conditions": cond_results,
+            "primary_met": primary_met,
+            "prob_gate_met": prob_gate_met,
+        }
+
+    return city_results
+
+
+def _eval_condition_at_point(val, op, th):
+    """Evaluate a single condition at a scalar value."""
+    if op == ">=":
+        return val >= th
+    elif op == ">":
+        return val > th
+    elif op == "<=":
+        return val <= th
+    elif op == "<":
+        return val < th
+    return False
 
 
 def _identify_region(lat, lon):

@@ -28,15 +28,12 @@ def estimate_messages_tokens(messages: list) -> int:
     """Estimate total tokens in a message list."""
     total = 0
     for msg in messages:
-        content = msg.get("content", "") or ""
+        m = _normalise_msg(msg)
+        content = m.get("content", "") or ""
         total += estimate_tokens(content)
-        # Tool calls
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            for tc in msg.tool_calls:
-                total += estimate_tokens(tc.function.arguments or "")
-        if msg.get("tool_calls"):
-            for tc in msg["tool_calls"]:
-                total += estimate_tokens(tc.get("function", {}).get("arguments", ""))
+        for tc in (m.get("tool_calls") or []):
+            args = tc.get("function", {}).get("arguments", "") if isinstance(tc, dict) else ""
+            total += estimate_tokens(args)
     return total
 
 

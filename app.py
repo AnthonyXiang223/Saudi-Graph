@@ -7,8 +7,6 @@ MAZU Agent — Streamlit Web 应用
 import streamlit as st
 import json
 import os
-import sys
-import logging
 from context_manager import ContextManager
 from session_manager import SessionManager
 
@@ -634,6 +632,9 @@ else:
                     messages=st.session_state.messages,
                 )
                 final_content = response.choices[0].message.content or ""
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": final_content}
+                )
                 st.markdown(final_content)
                 status_placeholder.empty()
 

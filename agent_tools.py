@@ -1646,6 +1646,7 @@ class ToolDispatcher:
     def _compare_with_history(self, args: dict) -> str:
         """Compare IFS forecast with 2025 same-date historical detection."""
         import os, datetime
+        from ifs_pipeline import list_ifs_dates
 
         forecast_day = args.get("forecast_day", 1)
         hazard_types = args.get("hazard_types")
