@@ -147,17 +147,26 @@ class ContextManager:
     def _split_turns(messages: list) -> list:
         """Split message list into conversational turns.
 
-        A turn ends when the assistant sends a text response (not just tool_calls).
+        A turn ends when the assistant sends a *final* text response —
+        i.e. a message that has text content but does NOT have pending
+        tool_calls.  Assistant messages with tool_calls (even if they
+        also contain a brief text preamble) are NOT turn boundaries,
+        because their tool_result children must stay in the same turn.
         """
         body = messages[1:]  # exclude system prompt
         turns = []
         current = []
         for msg in body:
             current.append(msg)
-            role = msg.get("role", "")
-            content = msg.get("content")
-            # Assistant text response (with or without tool_calls) closes a turn
-            if role == "assistant" and content:
+            # Normalise access: dict vs. SDK-object (both appear in session state)
+            role = msg.get("role", "") if isinstance(msg, dict) else getattr(msg, "role", "")
+            content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
+            has_tool_calls = bool(
+                msg.get("tool_calls") if isinstance(msg, dict)
+                else getattr(msg, "tool_calls", None)
+            )
+            # Turn boundary: assistant text response WITHOUT pending tool calls
+            if role == "assistant" and content and not has_tool_calls:
                 turns.append(current)
                 current = []
         if current:
@@ -181,20 +190,22 @@ class ContextManager:
             final_answer = ""
 
             for msg in turn:
-                if msg.get("role") == "user":
-                    user_q = msg.get("content", "")[:200]
-                elif msg.get("role") == "assistant":
-                    # Check for tool calls
-                    if hasattr(msg, "tool_calls") and msg.tool_calls:
-                        for tc in msg.tool_calls:
-                            name = tc.function.name if hasattr(tc, "function") else tc.get("function", {}).get("name", "?")
-                            tool_names.append(name)
-                    elif msg.get("tool_calls"):
-                        for tc in msg["tool_calls"]:
-                            name = tc.get("function", {}).get("name", "?")
+                role = msg.get("role", "") if isinstance(msg, dict) else getattr(msg, "role", "")
+                content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
+
+                if role == "user":
+                    user_q = (content or "")[:200]
+                elif role == "assistant":
+                    # Check for tool calls (dict and SDK-object paths)
+                    tcs = msg.get("tool_calls") if isinstance(msg, dict) else getattr(msg, "tool_calls", None)
+                    if tcs:
+                        for tc in tcs:
+                            if isinstance(tc, dict):
+                                name = tc.get("function", {}).get("name", "?")
+                            else:
+                                name = getattr(getattr(tc, "function", None), "name", "?")
                             tool_names.append(name)
                     # Text content
-                    content = msg.get("content")
                     if isinstance(content, str) and content.strip():
                         final_answer = content[:150]
 
