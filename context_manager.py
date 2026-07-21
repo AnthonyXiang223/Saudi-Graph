@@ -41,6 +41,65 @@ def estimate_messages_tokens(messages: list) -> int:
 
 
 # ══════════════════════════════════════════════════════════════
+# Message integrity helper
+# ══════════════════════════════════════════════════════════════
+
+def _repair_orphaned_tools(messages: list) -> list:
+    """Remove orphaned ``role: tool`` messages that lack a preceding
+    ``role: assistant`` with ``tool_calls``.
+
+    Orphans can arise when a turn-splitting bug (now fixed) incorrectly
+    separated tool_calls from their tool_results, or when a session is
+    restored from a corrupted state.  The safest repair is to drop the
+    orphaned tool message entirely.
+    """
+    cleaned = []
+    pending_tool_ids = set()  # tool_call_ids from the last assistant message
+
+    for m in messages:
+        role = m.get("role", "") if isinstance(m, dict) else getattr(m, "role", "")
+        has_tc = bool(
+            m.get("tool_calls") if isinstance(m, dict)
+            else getattr(m, "tool_calls", None)
+        )
+
+        if role == "assistant":
+            if has_tc:
+                # Collect expected tool_call_ids from this assistant message
+                tc_list = (
+                    m.get("tool_calls") if isinstance(m, dict)
+                    else getattr(m, "tool_calls", [])
+                )
+                pending_tool_ids = {
+                    tc.get("id", "") if isinstance(tc, dict) else getattr(tc, "id", "")
+                    for tc in tc_list
+                }
+            else:
+                pending_tool_ids = set()
+            cleaned.append(m)
+
+        elif role == "tool":
+            tid = m.get("tool_call_id", "") if isinstance(m, dict) else getattr(m, "tool_call_id", "")
+            if tid in pending_tool_ids:
+                cleaned.append(m)
+                pending_tool_ids.discard(tid)  # each id used once
+            else:
+                # Orphan: drop it
+                logger = logging.getLogger("mazu.context")
+                logger.warning(
+                    "Dropping orphaned tool message (no matching tool_calls): %s",
+                    tid or "?",
+                )
+
+        else:
+            # user / system: reset tracking
+            pending_tool_ids = set()
+            cleaned.append(m)
+
+    return cleaned
+
+
+# ══════════════════════════════════════════════════════════════
 # Context Manager
 # ══════════════════════════════════════════════════════════════
 
@@ -102,7 +161,7 @@ class ContextManager:
         # ── 2. Split into turns ──
         turns = self._split_turns(msgs)
         if len(turns) <= self.max_turns:
-            return msgs
+            return _repair_orphaned_tools(msgs)  # early return — still validate
 
         # ── 3. Summarise old turns, keep recent ones ──
         old_turns = turns[:-self.max_turns]
@@ -138,6 +197,9 @@ class ContextManager:
                     })
                 for turn in recent_turns:
                     result.extend(turn)
+
+        # ── 5. Safety: repair orphaned tool messages ──
+        result = _repair_orphaned_tools(result)
 
         return result
 
