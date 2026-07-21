@@ -354,11 +354,50 @@ HAZARD_LABELS = {
 }
 
 
+def _render_triggered_conditions(conditions: list):
+    """FCN-style: triggered_conditions with indicator/peak_value/cells_triggered."""
+    cols = st.columns(len(conditions))
+    for i, tc in enumerate(conditions):
+        label = _indicator_label(tc["indicator"])
+        with cols[i]:
+            st.metric(
+                label,
+                f"{tc['peak_value']}",
+                delta=f"{tc['cells_triggered']} 格点触发",
+            )
+            st.caption(tc.get("condition", ""))
+
+
+def _render_ifs_triggers(h: dict):
+    """IFS-style: primary_triggers + gate_detail."""
+    trigs = h.get("primary_triggers", [])
+    gate = h.get("gate_detail", {})
+    n = len(trigs)
+    if n == 0:
+        return
+    cols = st.columns(min(n, 4))
+    for i, ind_id in enumerate(trigs[:4]):
+        label = _indicator_label(ind_id)
+        with cols[i % 4]:
+            st.metric(label, "✓ 触发")
+    if gate:
+        pm = gate.get("primary_met_pct", 0)
+        pg = gate.get("prob_gate_met_pct", 0)
+        st.caption(f"主门控 {pm}% · 概率门控 {pg}%")
+    if h.get("unavailable"):
+        st.caption(f"暂不可用: {', '.join(h['unavailable'])}")
+
+
 def render_hazard_card(h: dict):
     """Render a single hazard detection result as a card."""
     sev = h.get("severity", "low")
     color = SEVERITY_COLORS.get(sev, "#6c757d")
     label = HAZARD_LABELS.get(h.get("hazard_type", ""), h.get("hazard_type", "?"))
+
+    score = h.get("max_risk_score") or h.get("max_score") or 0
+    hotspot = h.get("hotspot") or f"{h.get('hotspot_lat', '?')}N, {h.get('hotspot_lon', '?')}E"
+    coverage = h.get("coverage") or "?"
+    triggered_pct = h.get("triggered_pct")
 
     with st.container(border=True):
         cols = st.columns([1, 4])
@@ -366,12 +405,13 @@ def render_hazard_card(h: dict):
             st.markdown(f"### {label}")
         with cols[1]:
             if h.get("detected"):
+                extra = f" ({triggered_pct}% 格点)" if triggered_pct is not None else ""
                 st.markdown(
                     f"<span style='background:{color};color:white;padding:2px 10px;"
                     f"border-radius:10px;font-weight:bold'>{sev.upper()}</span> "
-                    f"得分 **{h.get('max_risk_score', 0):.3f}** | "
-                    f"覆盖 {h.get('coverage', '?')} | "
-                    f"热点 ({h.get('hotspot_lat', '?')}N, {h.get('hotspot_lon', '?')}E)",
+                    f"得分 **{score:.3f}** | "
+                    f"覆盖 {coverage} | "
+                    f"热点 {hotspot}{extra}",
                     unsafe_allow_html=True,
                 )
             else:
@@ -379,20 +419,14 @@ def render_hazard_card(h: dict):
                 st.caption(f"⚠ 未检出 — {reason}")
 
         if h.get("triggered_conditions"):
-            cols2 = st.columns(len(h["triggered_conditions"]))
-            for i, tc in enumerate(h["triggered_conditions"]):
-                label = _indicator_label(tc["indicator"])
-                with cols2[i]:
-                    st.metric(
-                        label,
-                        f"{tc['peak_value']}",
-                        delta=f"{tc['cells_triggered']} 格点触发",
-                    )
-                    st.caption(tc["condition"])
-
-        if h.get("unavailable_indicators"):
-            missing_cn = [_indicator_label(m) for m in h["unavailable_indicators"]]
-            st.caption(f"⚠ 暂不可用: {', '.join(missing_cn)}")
+            # FCN-style: triggered_conditions list
+            _render_triggered_conditions(h["triggered_conditions"])
+        elif h.get("primary_triggers"):
+            # IFS-style: primary_triggers list of indicator IDs
+            _render_ifs_triggers(h)
+        elif h.get("unavailable"):
+            missing = h["unavailable"]
+            st.caption(f"⚠ 暂不可用: {', '.join(missing)}")
 
 
 def render_detection_results(data: dict):
