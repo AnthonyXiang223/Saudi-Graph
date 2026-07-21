@@ -458,6 +458,69 @@ TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_calibrated_city_hazards",
+            "description": "【KG增强版城市灾害查询 - 推荐首选】基于IFS预报检测城市灾害风险，并用KG历史事件目录校准置信度。返回四类灾害的严重度+历史基准触发率+校准置信度(high/medium/low)。比get_city_hazards多一层KG历史验证。当用户问城市天气或灾害风险时优先使用此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "城市名(中文或英文), 如 '麦加'/'mecca'"},
+                    "date": {"type": "string", "description": "IFS初始日期 YYYYMMDD。留空则用最近可用日期。"},
+                    "hour": {"type": "integer", "description": "预报时次(0/12/24/...), 默认12(下午,最热时段)"},
+                    "hazard_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
+                        "description": "灾害类型列表, 不传则检测全部四种"
+                    }
+                },
+                "required": ["city"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "assess_forecast_reliability",
+            "description": "用KG历史事件目录校验IFS全国区域预报检测的可靠性。对比当前预报与365天历史事件模式，返回校准置信度和异常标记。适用于detect_ifs_forecast后的全域可靠性验证。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "IFS初始日期 YYYYMMDD。留空则用最近可用日期。"},
+                    "forecast_day": {"type": "integer", "description": "预报天数偏移(0=分析场), 默认0"},
+                    "hazard_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"]},
+                        "description": "灾害类型列表"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_historical_analogs",
+            "description": "在KG历史事件目录中查找与指定条件最相似的过去日期。返回类似日期的灾害发生情况和条件相似度。适用于'历史上类似情况下发生了什么'等回溯验证问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hazard_type": {
+                        "type": "string",
+                        "enum": ["flash_flood", "extreme_heat", "dust_storm", "coastal_humid_heat"],
+                        "description": "灾害类型"
+                    },
+                    "lat": {"type": "number", "description": "纬度"},
+                    "lon": {"type": "number", "description": "经度"},
+                    "date": {"type": "string", "description": "目标日期 YYYYMMDD"},
+                    "n_analogs": {"type": "integer", "description": "返回数量, 默认5"}
+                },
+                "required": ["hazard_type", "lat", "lon", "date"]
+            }
+        }
+    },
 
 ]
 
@@ -545,6 +608,12 @@ class ToolDispatcher:
                 result = self._list_ifs_dates(arguments)
             elif tool_name == "get_city_hazards":
                 result = self._get_city_hazards(arguments)
+            elif tool_name == "get_calibrated_city_hazards":
+                result = self._get_calibrated_city_hazards(arguments)
+            elif tool_name == "assess_forecast_reliability":
+                result = self._assess_forecast_reliability(arguments)
+            elif tool_name == "query_historical_analogs":
+                result = self._query_historical_analogs_tool(arguments)
             elif tool_name == "lookup_city":
                 result = self._lookup_city_tool(arguments)
 
@@ -1406,6 +1475,89 @@ class ToolDispatcher:
 
         return json.dumps(result, ensure_ascii=False, indent=2)
 
+    def _get_calibrated_city_hazards(self, args: dict) -> str:
+        """KG-calibrated city hazard detection — wraps _get_city_hazards + ForecastCalibrator."""
+        # 1. Run base city detection
+        raw = self._get_city_hazards(args)
+        base_result = json.loads(raw)
+
+        if "error" in base_result:
+            return raw  # pass through errors
+
+        # 2. Get city info and date
+        city_name = args.get("city", "")
+        city = self._lookup_city(city_name)
+        if not city:
+            return raw
+
+        date = args.get("date")
+        if date is None:
+            from ifs_pipeline import list_ifs_dates
+            dates = list_ifs_dates()
+            date = dates[-1] if dates else "20260720"
+
+        # 3. Run KG calibration
+        try:
+            from kg.forecast_calibrator import ForecastCalibrator
+            calibrator = ForecastCalibrator()
+            calibrated = calibrator.calibrate_city_confidence(base_result, date, city)
+            calibrated["note"] = "KG校准增强版。含历史基准触发率和校准置信度。severity为权威检测结论。"
+        except Exception as e:
+            base_result["_kg_error"] = str(e)
+            base_result["note"] = "KG校准失败，返回未校准结果。" + base_result.get("note", "")
+            return json.dumps(base_result, ensure_ascii=False, indent=2)
+
+        return json.dumps(calibrated, ensure_ascii=False, indent=2)
+
+    def _assess_forecast_reliability(self, args: dict) -> str:
+        """Run IFS detection + KG reliability assessment."""
+        # 1. Run IFS detection
+        raw = self._detect_from_ifs(args)
+        fc_data = json.loads(raw)
+
+        if "error" in fc_data:
+            return raw
+
+        date = args.get("date")
+        if date is None:
+            from ifs_pipeline import list_ifs_dates
+            dates = list_ifs_dates()
+            date = dates[-1] if dates else "20260720"
+
+        # 2. Run KG reliability assessment
+        try:
+            from kg.forecast_calibrator import ForecastCalibrator
+            calibrator = ForecastCalibrator()
+            reliability = calibrator.assess_forecast_reliability(
+                fc_data.get("hazards", []), date)
+            fc_data["kg_reliability"] = reliability
+        except Exception as e:
+            fc_data["kg_reliability"] = {"error": str(e)}
+
+        return json.dumps(fc_data, ensure_ascii=False, indent=2)
+
+    def _query_historical_analogs_tool(self, args: dict) -> str:
+        """Query KG for historical analog dates."""
+        hazard_type = args.get("hazard_type")
+        lat = args.get("lat")
+        lon = args.get("lon")
+        date = args.get("date")
+        n_analogs = args.get("n_analogs", 5)
+
+        try:
+            from kg.forecast_calibrator import ForecastCalibrator, HAZARD_LABELS
+            calibrator = ForecastCalibrator()
+            analogs = calibrator.get_historical_analogs(
+                hazard_type, lat, lon, date, n_analogs)
+            analogs["hazard_type"] = hazard_type
+            analogs["hazard_label"] = HAZARD_LABELS.get(hazard_type, hazard_type)
+            analogs["query_location"] = f"({lat}N, {lon}E)"
+            analogs["target_date"] = date
+        except Exception as e:
+            return json.dumps({"error": str(e), "hint": "确保已运行 build_event_catalog.py"}, ensure_ascii=False)
+
+        return json.dumps(analogs, ensure_ascii=False, indent=2)
+
     def _detect_sequence(self, args: dict) -> str:
         """Batch detection across multiple forecast days with trend analysis."""
         import os
@@ -1634,7 +1786,7 @@ class ToolDispatcher:
             "nearest_grid": f"({float(lat[ni]):.1f}N, {float(lon[nj]):.1f}E)",
             "grid_distance_km": dist_km,
             "forecast_day": forecast_day,
-            "lead_time_h": fcn_data.get("lead_time_h", "?"),
+            "lead_time_h": ifs_data.get("lead_time_h", "?"),
             "values": grouped,
             "note": "IFS 网格预报值，0.25°分辨率，未经过地面站点订正",
         }, ensure_ascii=False, indent=2)
