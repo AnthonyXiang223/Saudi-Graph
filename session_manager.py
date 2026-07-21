@@ -192,6 +192,18 @@ class SessionManager:
 
 # ── helpers ──
 
+def _normalise(msg) -> dict:
+    """Convert a message (dict or Pydantic SDK object) to a plain dict."""
+    if isinstance(msg, dict):
+        return msg
+    return {
+        "role": getattr(msg, "role", ""),
+        "content": getattr(msg, "content", None),
+        "tool_calls": getattr(msg, "tool_calls", None),
+        "tool_call_id": getattr(msg, "tool_call_id", None),
+    }
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -211,15 +223,32 @@ def _serialise_messages(
         if mi == 0:
             continue  # skip system prompt
 
-        role = msg.get("role", "")
-        content = msg.get("content")
+        # Normalise: handle both dict and Pydantic SDK objects
+        m = _normalise(msg)
+
+        role = m.get("role", "")
+        content = m.get("content")
         tc_json = None
-        tc_id = msg.get("tool_call_id")
+        tc_id = m.get("tool_call_id")
 
         # Serialise tool_calls if present
-        tcs = msg.get("tool_calls")
+        tcs = m.get("tool_calls")
         if tcs:
-            tc_json = json.dumps(tcs, ensure_ascii=False)
+            # Normalise each tool_call too (may be SDK objects)
+            norm_tcs = []
+            for tc in tcs:
+                if isinstance(tc, dict):
+                    norm_tcs.append(tc)
+                else:
+                    norm_tcs.append({
+                        "id": getattr(tc, "id", ""),
+                        "type": getattr(tc, "type", "function"),
+                        "function": {
+                            "name": getattr(getattr(tc, "function", None), "name", ""),
+                            "arguments": getattr(getattr(tc, "function", None), "arguments", ""),
+                        },
+                    })
+            tc_json = json.dumps(norm_tcs, ensure_ascii=False)
 
         # Serialise display entry
         # display entries are ordered: [user, assistant, user, assistant, ...]
