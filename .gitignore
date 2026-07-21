@@ -30,6 +30,7 @@ forecast/*
 # Reports and documentation (keep only README.md)
 *.md
 !README.md
+!docs/probabilistic_gating.md
 !kg/owl/dmdo/**/*.md
 参考*.md
 沙特*.md
