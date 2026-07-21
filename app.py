@@ -10,6 +10,7 @@ import os
 import sys
 import logging
 from context_manager import ContextManager, stream_chat_completion
+from session_manager import SessionManager
 
 # ── Page config ──
 st.set_page_config(
@@ -206,10 +207,86 @@ if "display" not in st.session_state:
 if "ctx_manager" not in st.session_state:
     st.session_state.ctx_manager = ContextManager(max_turns=6)
 
+# ── Session persistence ──
+if "session_manager" not in st.session_state:
+    st.session_state.session_manager = SessionManager()
+
+sm = st.session_state.session_manager
+
+if "current_session_id" not in st.session_state:
+    # Cold start — create a new session
+    st.session_state.current_session_id = sm.create_session()
+    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    st.session_state.display = []
+else:
+    # Always refresh system prompt
+    st.session_state.messages[0] = {"role": "system", "content": SYSTEM_PROMPT}
+
 # ═══════════════════════════════════════════════════════
 # Sidebar
 # ═══════════════════════════════════════════════════════
 with st.sidebar:
+    st.title("🌍 MAZU")
+    st.caption("沙特多灾种早期预警系统")
+
+    st.divider()
+
+    # ── Session list ──
+    st.subheader("💬 会话")
+
+    if st.button("＋ 新建会话", use_container_width=True):
+        # Save current before switching
+        if st.session_state.display:
+            sm.save_messages(
+                st.session_state.current_session_id,
+                st.session_state.messages,
+                st.session_state.display,
+            )
+        st.session_state.current_session_id = sm.create_session()
+        st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        st.session_state.display = []
+        st.rerun()
+
+    sessions = sm.list_sessions()
+    for s in sessions:
+        is_active = s["id"] == st.session_state.current_session_id
+        prefix = "▸ " if is_active else "  "
+        label = f"{prefix}{s['title'] or '新会话'}"
+
+        c1, c2 = st.columns([9, 1])
+        with c1:
+            if st.button(
+                label,
+                key=f"sess_{s['id']}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
+                if s["id"] != st.session_state.current_session_id:
+                    # Save current session
+                    if st.session_state.display:
+                        sm.save_messages(
+                            st.session_state.current_session_id,
+                            st.session_state.messages,
+                            st.session_state.display,
+                        )
+                    # Load selected session
+                    data = sm.get_session(s["id"])
+                    if data:
+                        st.session_state.current_session_id = s["id"]
+                        st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}] + data["messages"]
+                        st.session_state.display = data["display"]
+                    st.rerun()
+        with c2:
+            if st.button("✕", key=f"del_{s['id']}", help="删除会话"):
+                sm.delete_session(s["id"])
+                if s["id"] == st.session_state.current_session_id:
+                    # Deleted current — create new
+                    st.session_state.current_session_id = sm.create_session()
+                    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                    st.session_state.display = []
+                st.rerun()
+
+    st.divider()
     st.title("🌍 MAZU")
     st.caption("沙特多灾种早期预警系统")
 
@@ -574,5 +651,12 @@ else:
                 "content": final_content,
                 "tool_calls": display_tool_calls if display_tool_calls else None,
             })
+
+            # Persist session to disk
+            sm.save_messages(
+                st.session_state.current_session_id,
+                st.session_state.messages,
+                st.session_state.display,
+            )
 
         st.rerun()

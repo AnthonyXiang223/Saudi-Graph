@@ -56,3 +56,6 @@ test_aifs.grib2
 
 # Knowledge base (can be rebuilt with build_kb.py)
 kb/
+
+# Session database
+sessions.db
