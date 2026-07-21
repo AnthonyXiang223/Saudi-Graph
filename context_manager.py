@@ -41,8 +41,35 @@ def estimate_messages_tokens(messages: list) -> int:
 
 
 # ══════════════════════════════════════════════════════════════
-# Message integrity helper
+# Message normalisation + integrity helpers
 # ══════════════════════════════════════════════════════════════
+
+def _normalise_msg(msg) -> dict:
+    """Convert a message (dict or Pydantic SDK object) to a plain dict."""
+    if isinstance(msg, dict):
+        return msg
+    result = {
+        "role": getattr(msg, "role", ""),
+        "content": getattr(msg, "content", None),
+    }
+    tcs = getattr(msg, "tool_calls", None)
+    if tcs:
+        result["tool_calls"] = [
+            {
+                "id": getattr(tc, "id", ""),
+                "type": getattr(tc, "type", "function"),
+                "function": {
+                    "name": getattr(getattr(tc, "function", None), "name", ""),
+                    "arguments": getattr(getattr(tc, "function", None), "arguments", ""),
+                },
+            }
+            for tc in tcs
+        ]
+    tc_id = getattr(msg, "tool_call_id", None)
+    if tc_id:
+        result["tool_call_id"] = tc_id
+    return result
+
 
 def _repair_orphaned_tools(messages: list) -> list:
     """Remove orphaned ``role: tool`` messages that lack a preceding
@@ -54,32 +81,25 @@ def _repair_orphaned_tools(messages: list) -> list:
     orphaned tool message entirely.
     """
     cleaned = []
-    pending_tool_ids = set()  # tool_call_ids from the last assistant message
+    pending_tool_ids = set()
 
-    for m in messages:
-        role = m.get("role", "") if isinstance(m, dict) else getattr(m, "role", "")
-        has_tc = bool(
-            m.get("tool_calls") if isinstance(m, dict)
-            else getattr(m, "tool_calls", None)
-        )
+    for m_raw in messages:
+        m = _normalise_msg(m_raw)  # ensure plain dict
+        role = m.get("role", "")
+        has_tc = bool(m.get("tool_calls"))
 
         if role == "assistant":
             if has_tc:
-                # Collect expected tool_call_ids from this assistant message
-                tc_list = (
-                    m.get("tool_calls") if isinstance(m, dict)
-                    else getattr(m, "tool_calls", [])
-                )
                 pending_tool_ids = {
                     tc.get("id", "") if isinstance(tc, dict) else getattr(tc, "id", "")
-                    for tc in tc_list
+                    for tc in (m.get("tool_calls") or [])
                 }
             else:
                 pending_tool_ids = set()
             cleaned.append(m)
 
         elif role == "tool":
-            tid = m.get("tool_call_id", "") if isinstance(m, dict) else getattr(m, "tool_call_id", "")
+            tid = m.get("tool_call_id", "")
             if tid in pending_tool_ids:
                 cleaned.append(m)
                 pending_tool_ids.discard(tid)  # each id used once
@@ -147,6 +167,9 @@ class ContextManager:
         """
         if len(messages) <= 1:
             return list(messages)
+
+        # ── 0. Normalise: convert any Pydantic SDK objects to plain dicts ──
+        messages = [_normalise_msg(m) for m in messages]
 
         # ── 1. Cap tool results ──
         msgs = []
