@@ -1230,12 +1230,13 @@ class ToolDispatcher:
     }
 
     SAUDI_CITIES = {
-        # 西部红海沿岸
+        # 西部红海沿岸（真正沿海，距海 <50km）
         "jeddah":    {"lat": 21.54, "lon": 39.17, "label": "吉达", "region": "red_sea"},
         "yanbu":     {"lat": 24.09, "lon": 38.06, "label": "延布", "region": "red_sea"},
-        "mecca":     {"lat": 21.39, "lon": 39.86, "label": "麦加", "region": "red_sea"},
-        "medina":    {"lat": 24.47, "lon": 39.61, "label": "麦地那", "region": "red_sea"},
         "rabigh":    {"lat": 22.80, "lon": 39.03, "label": "拉比格", "region": "red_sea"},
+        # 西部内陆（Hijaz 山脉以东，距海 >50km，非沿海）
+        "mecca":     {"lat": 21.39, "lon": 39.86, "label": "���", "region": "central_saudi"},
+        "medina":    {"lat": 24.47, "lon": 39.61, "label": "���地那", "region": "central_saudi"},
         # 东部波斯湾沿岸
         "dammam":    {"lat": 26.42, "lon": 50.10, "label": "达曼", "region": "persian_gulf"},
         "jubail":    {"lat": 26.96, "lon": 49.57, "label": "朱拜勒", "region": "persian_gulf"},
