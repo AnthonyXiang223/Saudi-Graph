@@ -3,10 +3,13 @@ Dashboard server for Saudi Extreme Event Knowledge Graph.
 Flask backend — now with SPARQL/DMDO endpoints alongside original API.
 """
 
-import json, sys, os
+import json, sys, os, re, math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, render_template, send_from_directory
+from rdflib.namespace import SOSA, GEO
+from rdflib import Namespace
+GEO_F = Namespace("http://www.opengis.net/ont/geosparql#")
 
 app = Flask(__name__)
 DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +45,7 @@ def static_files(filename):
 # ═══════════════════════════════════════════
 @app.route("/")
 def index():
-    """DMDO-SPARQL powered dashboard."""
+    """DMDO-SPARQL knowledge graph dashboard."""
     return render_template("index_sparql.html")
 
 
@@ -457,6 +460,233 @@ def api_kg_summary():
     return jsonify({"triples": len(converter.graph), "indicators": len(converter._op_by_id), "rules": len(_rules_data["rules"])})
 
 
+# ═══════════════════════════════════════════
+# Chat API — ReAct loop with DeepSeek + tools
+# ═══════════════════════════════════════════
+
+# Lazy imports for chat
+_chat_imports = None
+
+def _get_chat_imports():
+    global _chat_imports
+    if _chat_imports is None:
+        from openai import OpenAI
+        from agent_tools import TOOLS as AGENT_TOOLS, dispatch_tool, smart_truncate
+        _chat_imports = (OpenAI, AGENT_TOOLS, dispatch_tool, smart_truncate)
+    return _chat_imports
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    """Proxy chat requests to DeepSeek with ReAct tool-use loop."""
+    body = request.get_json() or {}
+    messages = body.get("messages", [])
+    lang = body.get("lang", "en")
+
+    if not messages:
+        return jsonify({"error": "No messages provided"}), 400
+
+    # API key
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        # Try reading from .env
+        env_path = os.path.join(PROJECT_DIR, ".env")
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        if k.strip() == "DEEPSEEK_API_KEY":
+                            api_key = v.strip()
+                            break
+    if not api_key:
+        return jsonify({"error": "DeepSeek API key not configured"}), 503
+
+    try:
+        OpenAI, AGENT_TOOLS, dispatch_tool, smart_truncate = _get_chat_imports()
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        )
+
+
+        # Build system prompt (same comprehensive prompt as Streamlit app.py)
+        import datetime as _dt
+        today = _dt.date.today()
+
+        # Auto-detect latest IFS date
+        ifs_init = today
+        ifs_dir = os.path.join(PROJECT_DIR, "aifs_forecasts")
+        if os.path.isdir(ifs_dir):
+            ifs_dates = sorted([d for d in os.listdir(ifs_dir)
+                              if os.path.isdir(os.path.join(ifs_dir, d)) and re.match(r'^\d{8}', d)])
+            if ifs_dates:
+                try:
+                    ifs_init = _dt.date.fromisoformat(ifs_dates[-1])
+                except Exception:
+                    pass
+        ifs_offset = max((today - ifs_init).days, 0)
+
+        # Language instruction
+        lang_instr_map = {
+            "zh-CN": "- **Automatic language detection**: Reply in the SAME language as the user's question.\n- 用户用中文提问 → 你用中文回答。\n- User asks in English → reply in English.\n- إذا سأل المستخدم بالعربية → أجب بالعربية。",
+            "ar": "- **Automatic language detection**: Reply in the SAME language as the user's question.\n- إذا سأل المستخدم بالعربية → أجب بالعربية。\n- User asks in English → reply in English.",
+            "en": "Reply in English. Be concise and professional.",
+        }
+        lang_instr = lang_instr_map.get(lang, "Reply in English.")
+
+        system_prompt = f"""你是 MAZU 多灾种早期预警系统的气象分析助手，服务沙特阿拉伯气象预警业务。
+You are the meteorological analysis assistant of the MAZU multi-hazard early warning system.
+
+══════════════════════════════════════
+语言 / Language / اللغة
+══════════════════════════════════════
+{lang_instr}
+
+══════════════════════════════════════
+时间上下文
+══════════════════════════════════════
+- 当前日期：{today.isoformat()}。用户说的"今天""明天"以此为准。
+- 历史数据：2025 年全年 ERA5 再分析（365 天 NetCDF，35,200 格点，约100 个指标）。
+- 预报数据：ECMWF IFS 全球预报(0.25°)，初始化于 {ifs_init.isoformat()}，forecast_day={ifs_offset} = 今天，明天 = {ifs_offset+1}，以此类推，最多覆盖初始化后 7 天。
+
+══════════════════════════════════════
+能力边界
+══════════════════════════════════════
+
+## 你能回答的问题（调用对应工具即可获取答案）
+- 四类灾害（极端高温、沙尘强风、山洪、沿海湿热）的未来 7 天风险检测 → detect_future_events
+- 2025 年任意日期的历史极端事件回顾 → detect_extreme_events
+- 91 个气象指标的物理定义、公式、推导链、数据来源 → query_indicator_* 系列
+- 4 条检测规则的完整条件、权重、角色 → query_rule_detail
+- 指定坐标周边半径内的指标观测 → query_observations_nearby
+
+## 你无法回答的问题（直接说明能力不足，不要绕弯）
+- 任何涉及"实况""实测""实时""当前此刻"的问题 — 你只有 2025 年再分析和 IFS 预报，没有实时观测
+- 卫星反演、雷达回波、土壤墒情、大气能见度 — 系统没有接入这些数据
+- 2 小时短临预报、30 天长期预测 — 超出 IFS 预报范围
+- 概率百分比、精确起止时间、能见度米数 — 系统只输出风险评分和严重度等级
+
+══════════════════════════════════════
+研判规则（踩坑纠错 + 沙特本地校准）
+══════════════════════════════════════
+
+**规则 1：高温不只看温度数值**
+- 沙特 7 月沙漠格点 44-48℃ 是常态，不要一看到就报"极端"。
+- 异常判断看三件：是否超过气候态 +5℃？露点差是否 >20℃？连续几天？
+- ERA5 格点值在沙漠区域系统性偏低 2-4℃，输出时提及这个偏差，但不要说"已订正"。
+
+**规则 2：沙尘热点不重合 ≠ 目标区域安全**
+- 检测到的沙尘热点在阿曼湾时，不要直接判"港区不受影响"。
+- 同一气团 + 同一干燥背景下，沙尘可沿 Shamal 方向传播。
+
+**规则 3：KG 物理一致性得分低 ≠ 模型不可靠**
+- 沙特干季（5-10 月）可降水量与 IVT 辐合弱相关或负相关，这是气候常态。
+
+**规则 4：山洪未触发 ≠ 无对流**
+- 山洪检测覆盖有限，未触发不说明安全。
+- 必须单独检查日降水量 ≥10mm 的格点数量和位置。
+
+══════════════════════════════════════
+输出规范（强制遵守）
+══════════════════════════════════════
+
+**通用原则（强制）：**
+- 结论前置——第一句必须是问题直接回答，不许以"根据系统数据""通过调用工具"铺垫。
+- 技术细节放末尾——不打断阅读流。
+- 表格只在多指标/多地对比时使用，单个结果不堆表格。
+
+**禁止行为**：
+- 禁止编造方法名称、算法流程、数据处理步骤
+- 禁止说"仅供参考""建议进一步核实"等搪塞话
+- 禁止把"你不具备的能力"说成"建议查询 XX 数据"
+- 禁止前后矛盾：如果工具 A 和工具 B 结果冲突，明确指出冲突
+
+## 沙特地理
+- 红海沿岸：16-30°N, 34-44°E，吉达、延布。对流由阿西尔山脉地形触发。
+- 波斯湾沿岸：24-30°N, 48-56°E，达曼、朱拜勒。受沙马风（Shamal）控制。
+- 利雅得：24.7°N, 46.7°E，中部沙漠。
+- 鲁布哈利沙漠（Empty Quarter）：17-23°N, 45-56°E，世界最大连续沙体。"""
+
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+
+        tool_calls_log = []
+        final_content = ""
+
+        for turn in range(5):
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=full_messages,
+                tools=AGENT_TOOLS,
+                tool_choice="auto",
+            )
+            msg = response.choices[0].message
+
+            if msg.tool_calls:
+                full_messages.append(msg)
+                for tc in msg.tool_calls:
+                    name = tc.function.name
+                    args = json.loads(tc.function.arguments)
+                    result = dispatch_tool(name, args)
+                    result = smart_truncate(result, name, max_chars=2000)
+                    full_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+                    # For detect tools, keep full result; otherwise trim
+                    if name in ("detect_future_events", "detect_extreme_events"):
+                        result_for_ui = result
+                    else:
+                        result_for_ui = result[:2000]
+                    tool_calls_log.append({
+                        "name": name,
+                        "args": args,
+                        "result": result_for_ui,
+                    })
+            else:
+                final_content = msg.content or ""
+                break
+        else:
+            full_messages.append({
+                "role": "user",
+                "content": "Summarize briefly based on the tool results above.",
+            })
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=full_messages,
+            )
+            final_content = response.choices[0].message.content or ""
+
+        return jsonify({
+            "content": final_content,
+            "tool_calls": tool_calls_log if tool_calls_log else None,
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════
+# Service status
+# ═══════════════════════════════════════════
+
+@app.route("/api/service/ifs-status")
+def api_ifs_status():
+    """Check if IFS forecast data is available."""
+    ifs_dir = os.path.join(PROJECT_DIR, "aifs_forecasts")
+    available = False
+    if os.path.isdir(ifs_dir):
+        import re
+        dirs = [d for d in os.listdir(ifs_dir)
+                if os.path.isdir(os.path.join(ifs_dir, d)) and re.match(r'^\d{8}', d)]
+        available = len(dirs) > 0
+    return jsonify({"available": available})
+
+
 if __name__ == "__main__":
     print("\nDashboard: http://127.0.0.1:5000")
+    print("Unified UI: http://127.0.0.1:5000/unified")
     app.run(debug=True, host="0.0.0.0", port=5000)

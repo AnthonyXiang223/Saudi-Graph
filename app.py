@@ -1,7 +1,7 @@
 """
-MAZU Agent — Streamlit Web 应用
-启动: streamlit run app.py
-需要: DeepSeek API key (.env) + Flask dashboard (python dashboard/server.py)
+MAZU Agent — Streamlit Web UI
+Launch: streamlit run app.py
+Requires: DeepSeek API key (.env) + Flask dashboard (python dashboard/server.py)
 """
 
 import streamlit as st
@@ -12,11 +12,452 @@ from session_manager import SessionManager
 
 # ── Page config ──
 st.set_page_config(
-    page_title="MAZU 沙特极端天气预警",
+    page_title="MAZU · Saudi Multi-Hazard Early Warning",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ═══════════════════════════════════════════════════════
+# Custom CSS — taste-skill: dark scientific theme, amber accent
+# ═══════════════════════════════════════════════════════
+st.markdown("""
+<style>
+/* ── Root overrides ── */
+.stApp { background: #0c0f14; }
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+  background: #13171f;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+[data-testid="stSidebar"] .stMarkdown h1 {
+  font-size: 1.2rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em;
+  color: #e6edf3 !important;
+}
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] .st-caption {
+  color: #8b949e !important;
+  font-size: 0.8rem !important;
+}
+
+/* ── Sidebar buttons ── */
+[data-testid="stSidebar"] .stButton button {
+  background: #191e28;
+  border: 1px solid rgba(255,255,255,0.09);
+  color: #e6edf3;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+[data-testid="stSidebar"] .stButton button:hover {
+  background: #1f2532;
+  border-color: rgba(212,168,83,0.25);
+  color: #d4a853;
+}
+[data-testid="stSidebar"] .stButton button[kind="primary"] {
+  background: rgba(212,168,83,0.12);
+  border-color: rgba(212,168,83,0.20);
+}
+
+/* ── Sidebar dividers ── */
+[data-testid="stSidebar"] hr {
+  border-color: rgba(255,255,255,0.06);
+  margin: 0.8rem 0;
+}
+
+/* ── Sidebar expanders / status ── */
+[data-testid="stSidebar"] .stAlert {
+  background: transparent !important;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+/* ── Title / header ── */
+.stApp header[data-testid="stHeader"] {
+  background: transparent;
+}
+.main-header { display: none; }
+
+/* ── Chat messages ── */
+[data-testid="stChatMessage"] {
+  padding: 0.6rem 0.4rem;
+}
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] {
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: #e6edf3;
+}
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] h1,
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] h2,
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] h3 {
+  color: #e6edf3 !important;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] h3 {
+  font-size: 1.05rem !important;
+}
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] table {
+  font-size: 0.82rem;
+  border-collapse: collapse;
+  width: 100%;
+}
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] th {
+  background: #191e28;
+  color: #d4a853;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.09);
+  text-align: left;
+}
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] td {
+  padding: 5px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  color: #c0c7cf;
+}
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] code {
+  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  background: #11151d;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #6b9fd4;
+}
+
+/* ── Chat input ── */
+[data-testid="stChatInput"] textarea {
+  background: #11151d;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
+  color: #e6edf3;
+  font-size: 0.9rem;
+  padding: 10px 14px;
+}
+[data-testid="stChatInput"] textarea:focus {
+  border-color: #d4a853;
+  box-shadow: none;
+}
+[data-testid="stChatInput"] textarea::placeholder {
+  color: #555d68;
+}
+
+/* ── Expander (tool calls) ── */
+[data-testid="stExpander"] {
+  background: #11151d;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+  border-radius: 6px !important;
+  margin: 6px 0;
+  font-size: 0.8rem;
+}
+[data-testid="stExpander"] details summary {
+  color: #8b949e;
+  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  padding: 6px 10px;
+}
+[data-testid="stExpander"] details summary:hover {
+  color: #c0c7cf;
+}
+
+/* ── Container cards (hazard cards) ── */
+[data-testid="stVerticalBlockBorderWrapper"] {
+  background: #13171f;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+  border-radius: 8px !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stMarkdownContainer"] h3) {
+  border-left: 3px solid rgba(212,168,83,0.4) !important;
+}
+
+/* ── Metric cards ── */
+[data-testid="stMetric"] {
+  background: #11151d;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  padding: 8px;
+}
+[data-testid="stMetric"] label {
+  color: #8b949e !important;
+  font-size: 0.7rem !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  color: #e6edf3 !important;
+  font-size: 1.3rem !important;
+  font-weight: 700 !important;
+  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
+}
+[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+  font-size: 0.72rem;
+}
+
+/* ── Buttons (main area) ── */
+.stButton button {
+  background: #191e28;
+  border: 1px solid rgba(255,255,255,0.09);
+  color: #e6edf3;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.82rem;
+  transition: all 0.2s ease;
+}
+.stButton button:hover {
+  background: #1f2532;
+  border-color: rgba(212,168,83,0.25);
+  color: #d4a853;
+}
+.stButton button[kind="primary"] {
+  background: #d4a853;
+  border-color: #d4a853;
+  color: #0c0f14;
+  font-weight: 600;
+}
+.stButton button[kind="primary"]:hover {
+  background: #e0b95e;
+  color: #0c0f14;
+}
+
+/* ── Link buttons ── */
+.stLinkButton a {
+  border-radius: 6px !important;
+  font-size: 0.8rem !important;
+  border: 1px solid rgba(255,255,255,0.09) !important;
+  background: #191e28 !important;
+  color: #8b949e !important;
+}
+.stLinkButton a:hover {
+  border-color: rgba(212,168,83,0.25) !important;
+  color: #d4a853 !important;
+}
+
+/* ── Warning / Info / Success boxes ── */
+.stAlert {
+  border-radius: 6px;
+  font-size: 0.84rem;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+div[data-testid="stAlert"][kind="warning"] {
+  background: rgba(212,131,58,0.08);
+  border-color: rgba(212,131,58,0.2);
+}
+div[data-testid="stAlert"][kind="info"] {
+  background: rgba(107,159,212,0.08);
+  border-color: rgba(107,159,212,0.2);
+}
+div[data-testid="stAlert"][kind="success"] {
+  background: rgba(90,158,111,0.08);
+  border-color: rgba(90,158,111,0.2);
+}
+div[data-testid="stAlert"][kind="error"] {
+  background: rgba(224,85,96,0.08);
+  border-color: rgba(224,85,96,0.2);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.13); }
+
+/* ── Caption / small text ── */
+.st-caption { color: #555d68 !important; font-size: 0.75rem !important; }
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab"] {
+  color: #8b949e;
+  font-size: 0.82rem;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+  color: #d4a853;
+}
+
+/* ── Selectbox / inputs ── */
+.stSelectbox [data-baseweb="select"] > div {
+  background: #11151d;
+  border-color: rgba(255,255,255,0.09);
+  border-radius: 6px;
+}
+
+/* ── Divider ── */
+hr {
+  border-color: rgba(255,255,255,0.06) !important;
+  margin: 0.6rem 0 !important;
+}
+
+/* ═══════════════════════════════════════════════
+   MOTION — taste-skill MOTION_INTENSITY: 6
+   ═══════════════════════════════════════════════ */
+
+/* ── Ambient background orbs ── */
+.stApp::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(212,168,83,0.025) 0%, transparent 50%),
+    radial-gradient(circle at 75% 60%, rgba(107,159,212,0.018) 0%, transparent 50%);
+  animation: ambientShift 18s ease-in-out infinite alternate;
+}
+@keyframes ambientShift {
+  0%   { opacity: 0.6; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* ── Chat message entry ── */
+[data-testid="stChatMessage"] {
+  animation: msgEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+[data-testid="stChatMessage"]:nth-child(1) { animation-delay: 0.02s; }
+[data-testid="stChatMessage"]:nth-child(2) { animation-delay: 0.06s; }
+[data-testid="stChatMessage"]:nth-child(3) { animation-delay: 0.10s; }
+[data-testid="stChatMessage"]:nth-child(4) { animation-delay: 0.14s; }
+[data-testid="stChatMessage"]:nth-child(5) { animation-delay: 0.18s; }
+[data-testid="stChatMessage"]:nth-child(6) { animation-delay: 0.22s; }
+[data-testid="stChatMessage"]:nth-child(7) { animation-delay: 0.26s; }
+[data-testid="stChatMessage"]:nth-child(8) { animation-delay: 0.30s; }
+@keyframes msgEnter {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Button hover physics ── */
+.stButton button {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.stButton button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.stButton button:active {
+  transform: scale(0.97) !important;
+  transition-duration: 0.08s !important;
+}
+.stButton button[kind="primary"]:hover {
+  box-shadow: 0 4px 20px rgba(212,168,83,0.2);
+}
+
+/* ── Link button hover ── */
+.stLinkButton a {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.stLinkButton a:hover {
+  transform: translateY(-1px);
+}
+
+/* ── Card hover lift ── */
+[data-testid="stVerticalBlockBorderWrapper"] {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  border-color: rgba(212,168,83,0.15) !important;
+}
+
+/* ── Metric card hover ── */
+[data-testid="stMetric"] {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-testid="stMetric"]:hover {
+  transform: translateY(-1px);
+  border-color: rgba(212,168,83,0.2);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* ── Expander hover ── */
+[data-testid="stExpander"] {
+  transition: all 0.25s ease;
+}
+[data-testid="stExpander"]:hover {
+  border-color: rgba(255,255,255,0.12) !important;
+  transform: translateX(2px);
+}
+[data-testid="stExpander"] details summary {
+  transition: color 0.2s ease;
+}
+[data-testid="stExpander"] details summary .st-emotion-cache-1aegexp {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Chat input focus glow ── */
+[data-testid="stChatInput"] textarea {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-testid="stChatInput"] textarea:focus {
+  box-shadow: 0 0 0 2px rgba(212,168,83,0.25);
+}
+
+/* ── Sidebar button hover slide ── */
+[data-testid="stSidebar"] .stButton button {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+[data-testid="stSidebar"] .stButton button:hover {
+  transform: translateX(3px);
+}
+[data-testid="stSidebar"] .stButton button:active {
+  transform: scale(0.97) !important;
+}
+
+/* ── Status dot pulse ── */
+[data-testid="stSidebar"] .stAlert [kind="success"] {
+  animation: statusPulse 3s ease-in-out infinite;
+}
+@keyframes statusPulse {
+  0%, 100% { border-color: rgba(90,158,111,0.15); }
+  50%      { border-color: rgba(90,158,111,0.35); }
+}
+
+/* ── Tab underline slide ── */
+.stTabs [data-baseweb="tab"] {
+  transition: color 0.25s ease;
+}
+.stTabs [data-baseweb="tab"]::after {
+  content: '';
+  display: block;
+  width: 0;
+  height: 2px;
+  background: #d4a853;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-top: 2px;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"]::after {
+  width: 100%;
+}
+
+/* ── Table row hover ── */
+[data-testid="stChatMessage"] table tbody tr {
+  transition: background 0.2s ease;
+}
+[data-testid="stChatMessage"] table tbody tr:hover {
+  background: rgba(212,168,83,0.06);
+}
+
+/* ── Severity badge shimmer (inline spans with background color) ── */
+[data-testid="stChatMessage"] span[style*="background"] {
+  transition: all 0.3s ease;
+}
+
+/* ═══════════════════════════════════════════
+   REDUCED MOTION
+   ═══════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .stApp::before { display: none; }
+  [data-testid="stChatMessage"] { animation: none; opacity: 1; transform: none; }
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ── Load API key ──
 if os.path.exists(".env"):
@@ -31,7 +472,7 @@ API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
 # ── Load indicator name mapping ──
 def _load_indicator_names():
-    """Load {indicator_id: chinese_description} from operators.json."""
+    """Load {indicator_id: description} from operators.json."""
     try:
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "schema", "operators.json"), "r", encoding="utf-8") as f:
@@ -43,10 +484,10 @@ def _load_indicator_names():
 INDICATOR_NAMES = _load_indicator_names()
 
 def _indicator_label(ind_id: str) -> str:
-    """Get Chinese display name for an indicator ID."""
+    """Get display name for an indicator ID."""
     name = INDICATOR_NAMES.get(ind_id, "")
     if name:
-        return f"{name}（{ind_id}）"
+        return f"{name} ({ind_id})"
     return ind_id
 
 # ── Build dynamic system prompt ──
@@ -71,6 +512,16 @@ def _build_system_prompt():
     ifs_offset = max((today - ifs_init).days, 0)
 
     return f"""你是 MAZU 多灾种早期预警系统的气象分析助手，服务沙特阿拉伯气象预警业务。
+You are the meteorological analysis assistant of the MAZU multi-hazard early warning system.
+
+══════════════════════════════════════
+语言 / Language / اللغة
+══════════════════════════════════════
+- **Automatic language detection**: Reply in the SAME language as the user's question.
+- 用户用中文提问 → 你用中文回答。
+- User asks in English → reply in English.
+- إذا سأل المستخدم بالعربية → أجب بالعربية.
+- All meteorological indicators, severity levels, and hazard names should be translated to the reply language.
 
 ══════════════════════════════════════
 时间上下文
@@ -220,15 +671,15 @@ else:
 # Sidebar
 # ═══════════════════════════════════════════════════════
 with st.sidebar:
-    st.title("🌍 MAZU")
-    st.caption("沙特多灾种早期预警系统")
+    st.markdown("### 🌍 MAZU")
+    st.caption("Saudi Multi-Hazard Early Warning System")
 
     st.divider()
 
     # ── Session list ──
-    st.subheader("💬 会话")
+    st.caption("SESSIONS")
 
-    if st.button("＋ 新建会话", use_container_width=True):
+    if st.button("+ New Session", use_container_width=True):
         # Save current before switching (skip if empty)
         if st.session_state.display:
             sm.save_messages(
@@ -248,7 +699,7 @@ with st.sidebar:
     for s in sessions:
         is_active = s["id"] == st.session_state.current_session_id
         prefix = "▸ " if is_active else "  "
-        label = f"{prefix}{s['title'] or '新会话'}"
+        label = f"{prefix}{s['title'] or 'New Session'}"
 
         c1, c2 = st.columns([9, 1])
         with c1:
@@ -274,7 +725,7 @@ with st.sidebar:
                         st.session_state.display = data["display"]
                     st.rerun()
         with c2:
-            if st.button("✕", key=f"del_{s['id']}", help="删除会话"):
+            if st.button("✕", key=f"del_{s['id']}", help="Delete session"):
                 sm.delete_session(s["id"])
                 if s["id"] == st.session_state.current_session_id:
                     # Deleted current — create new
@@ -285,17 +736,17 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("服务状态")
+    st.caption("SERVICE STATUS")
 
     import requests
     kg_online = False
     try:
         r = requests.get("http://127.0.0.1:5000/api/sparql/summary", timeout=2)
         kg_online = True
-        st.success("知识图谱 · 在线")
+        st.success("KG Dashboard · Online")
     except Exception:
-        st.error("知识图谱 · 离线")
-        st.caption("请运行 `python dashboard/server.py`")
+        st.error("KG Dashboard · Offline")
+        st.caption("Run `python dashboard/server.py`")
 
     import os as _os
     ifs_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "aifs_forecasts")
@@ -304,16 +755,16 @@ with st.sidebar:
         for d in _os.listdir(ifs_dir) if d[:1] != '.'
     )
     if ifs_available:
-        st.success("IFS 预报 · 就绪")
+        st.success("IFS Forecasts · Ready")
     else:
-        st.warning("IFS 预报 · 未就绪")
-        st.caption("请运行 IFS 下载脚本获取预报数据")
+        st.warning("IFS Forecasts · Not Ready")
+        st.caption("Run IFS download script")
 
     st.divider()
 
     if kg_online:
         st.link_button(
-            "🔗 打开知识图谱仪表盘",
+            "Knowledge Graph →",
             "http://127.0.0.1:5000/",
             use_container_width=True,
         )
@@ -339,10 +790,10 @@ SEVERITY_COLORS = {
 }
 
 HAZARD_LABELS = {
-    "flash_flood": "🌊 山洪",
-    "extreme_heat": "🔥 极端高温",
-    "dust_storm": "💨 沙尘强风",
-    "coastal_humid_heat": "🏖️ 沿海湿热",
+    "flash_flood": "🌊 Flash Flood",
+    "extreme_heat": "🔥 Extreme Heat",
+    "dust_storm": "💨 Dust Storm",
+    "coastal_humid_heat": "🏖️ Coastal Humid Heat",
 }
 
 
@@ -355,7 +806,7 @@ def _render_triggered_conditions(conditions: list):
             st.metric(
                 label,
                 f"{tc['peak_value']}",
-                delta=f"{tc['cells_triggered']} 格点触发",
+                delta=f"{tc['cells_triggered']} cells triggered",
             )
             st.caption(tc.get("condition", ""))
 
@@ -371,13 +822,13 @@ def _render_ifs_triggers(h: dict):
     for i, ind_id in enumerate(trigs[:4]):
         label = _indicator_label(ind_id)
         with cols[i % 4]:
-            st.metric(label, "✓ 触发")
+            st.metric(label, "✓ Triggered")
     if gate:
         pm = gate.get("primary_met_pct", 0)
         pg = gate.get("prob_gate_met_pct", 0)
-        st.caption(f"主门控 {pm}% · 概率门控 {pg}%")
+        st.caption(f"Primary Gate {pm}% · Prob Gate {pg}%")
     if h.get("unavailable"):
-        st.caption(f"暂不可用: {', '.join(h['unavailable'])}")
+        st.caption(f"Unavailable: {', '.join(h['unavailable'])}")
 
 
 def render_hazard_card(h: dict):
@@ -408,7 +859,7 @@ def render_hazard_card(h: dict):
                 )
             else:
                 reason = h.get("reason", "指标不足")
-                st.caption(f"⚠ 未检出 — {reason}")
+                st.caption(f"⚠ Not detected — {reason}")
 
         if h.get("triggered_conditions"):
             # FCN-style: triggered_conditions list
@@ -418,13 +869,13 @@ def render_hazard_card(h: dict):
             _render_ifs_triggers(h)
         elif h.get("unavailable"):
             missing = h["unavailable"]
-            st.caption(f"⚠ 暂不可用: {', '.join(missing)}")
+            st.caption(f"⚠ Unavailable: {', '.join(missing)}")
 
 
 def render_detection_results(data: dict):
     """Render detect_future_events output."""
     if "error" in data:
-        st.error(f"预报失败: {data['error']}")
+        st.error(f"Forecast failed: {data['error']}")
         if "hint" in data:
             st.info(data["hint"])
         return
@@ -465,7 +916,7 @@ def render_detection_results(data: dict):
     if "synthesis" in data:
         s = data["synthesis"]
         color = {"high": "green", "medium": "orange", "low": "red"}.get(s.get("confidence", ""), "grey")
-        st.markdown(f"**综合结论** ({color}): {s['verdict']}")
+        st.markdown(f"**Overall Assessment** ({color}): {s['verdict']}")
         st.info(s.get("recommendation", ""))
 
 
@@ -518,7 +969,7 @@ def render_tool_result(tool_name: str, result_str: str):
 # Main Chat Interface
 # ═══════════════════════════════════════════════════════
 
-st.title("MAZU 沙特极端天气预警助手")
+st.markdown("## MAZU · Saudi Multi-Hazard Early Warning")
 # Display chat history
 for entry in st.session_state.display:
     role = entry["role"]
@@ -529,20 +980,13 @@ for entry in st.session_state.display:
         if content:
             st.markdown(content)
 
-        # Show tool calls if any
-        if tool_calls_data:
-            for tc in tool_calls_data:
-                with st.expander(f"🔧 {tc['name']}", expanded=False):
-                    if tc.get("args"):
-                        st.caption(f"参数: `{json.dumps(tc['args'], ensure_ascii=False)}`")
-                    if tc.get("result") is not None:
-                        render_tool_result(tc["name"], tc["result"])
+        # Tool calls are processed silently in the background
 
 # Chat input
 if not API_KEY:
-    st.warning("请在侧边栏输入 DeepSeek API Key")
+    st.warning("Enter your DeepSeek API Key in the sidebar")
 else:
-    if prompt := st.chat_input("请输入你的问题，例如: 明天沙特会有什么极端天气风险？"):
+    if prompt := st.chat_input("Ask a question, e.g.: What extreme weather risks does Saudi Arabia face tomorrow?"):
         # Add user message
         st.session_state.display.append({"role": "user", "content": prompt, "tool_calls": None})
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -605,10 +1049,7 @@ else:
                             "result": result,
                         })
 
-                        # 即时展示工具调用
-                        with st.expander(f"🔧 {name}", expanded=False):
-                            st.caption(f"参数: `{json.dumps(args, ensure_ascii=False)}`")
-                            render_tool_result(name, result)
+                        # Tool runs silently; results feed into the final answer
 
                 # ── 最终回答 ──
                 else:

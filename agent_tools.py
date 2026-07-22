@@ -7,7 +7,7 @@ Usage:
 
     # In your LLM function calling loop:
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="deepseek-chat",
         messages=messages,
         tools=TOOLS,
         tool_choice="auto"
@@ -42,7 +42,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_hazard_indicators",
-            "description": "查询某种灾害类型依赖的所有气象指标。返回指标ID、描述和单位。适用于'山洪需要哪些条件''极端高温依赖什么指标'等问题。",
+            "description": "Query all meteorological indicators that a hazard type depends on. Returns indicator IDs, descriptions, and units. Use for questions like 'what conditions are needed for flash floods' or 'what indicators does extreme heat depend on' (supports CN/EN/AR queries).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -60,7 +60,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_indicator_detail",
-            "description": "查询一个气象指标的完整信息：物理含义、计算公式、可执行DAG、数据来源、联合解释指标、局限性说明。适用于'vpd_kpa是什么''cape怎么算的'等问题。",
+            "description": "Query complete information about a meteorological indicator: physical meaning, calculation formula, executable DAG, data source, co-occurring indicators, and limitations. Use for 'what is VPD' or 'how is CAPE calculated'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -77,7 +77,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_indicator_chain",
-            "description": "追溯一个指标从原始数据源开始的完整推导链。返回每一层计算步骤和最终数据来源（DS1/DS2/DS4/DS8/DS10/SST）。适用于'heatwave_duration_days是怎么一步步算出来的'等问题。",
+            "description": "Trace the complete derivation chain of an indicator from its original data source. Returns each computation step and the ultimate data source (DS1/DS2/DS4/DS8/DS10/SST). Use for questions about how an indicator is derived step by step.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -94,7 +94,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_indicators",
-            "description": "按关键词搜索气象指标。返回匹配的指标ID和描述。适用于'有哪些降水相关的指标''搜索和温度有关的变量'等问题。",
+            "description": "Search meteorological indicators by keyword (Chinese, English, or Arabic). Returns matching indicator IDs and descriptions.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -111,7 +111,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_rule_detail",
-            "description": "查询某条检测规则的完整条件列表，包括每个条件的因果角色（causal因果/提前量, concurrent并发/实况, derived_gate衍生/门控）、权重、阈值、primary gate和fallback降级策略。适用于'山洪检测规则是什么条件''高温预警怎么判断的'等问题。",
+            "description": "Query the complete condition list for a detection rule, including each condition's causal role (causal/concurrent/derived_gate/probabilistic_gate), weight, threshold, primary gate, and fallback strategy.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -132,7 +132,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_observations_nearby",
-            "description": "在指定坐标的半径范围内，搜索某指标超过阈值的观测值。返回每个格点的经纬度、数值和距离。适用于'利雅得周边100km内哪里超过45°C''红海沿岸哪些地方降水超过10mm'等问题。",
+            "description": "Search for observations of an indicator exceeding a threshold within a radius around specified coordinates. Returns lat/lon, values, and distances for each grid cell. Use for 'where near Riyadh exceeds 45°C within 100km'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -154,7 +154,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_events_in_region",
-            "description": "查询某个地理区域内发生的所有极端灾害事件。返回事件ID、灾害类型、严重度和面积。适用于'红海有哪些山洪事件''波斯湾沿岸发生过什么灾害'等问题。",
+            "description": "Query all extreme hazard events in a geographic region. Returns event ID, hazard type, severity, and area. Use for 'what flood events occurred in the Red Sea region'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -176,7 +176,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_event_timeline",
-            "description": "查询指定时间范围内按时间排序的所有灾害事件。返回每个事件的日期、类型、严重度。适用于'2025年8月发生了哪些极端事件'等问题。",
+            "description": "Query all hazard events in a time range, sorted chronologically. Returns date, type, and severity for each event. Use for 'what extreme events occurred in August 2025'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -191,7 +191,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_cascading_chain",
-            "description": "追踪一个灾害事件的级联影响链：查询它引发了哪些次生事件（通过possiblyCauses/time:before关系）。适用于'这场山洪是否引发了后续灾害'等问题。",
+            "description": "Trace the cascading impact chain of a hazard event: query what secondary events it triggered (via possiblyCauses/time:before relations). Use for 'did this flood trigger subsequent disasters'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -212,7 +212,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_provenance",
-            "description": "查询指标的完整数据溯源链：它来自哪个数据源（ERA5/GPM/OSTIA）、由哪个传感器观测、通过什么步骤推导得出。适用于't2m_anomaly_c的数据来源是什么'等问题。",
+            "description": "Query the complete data provenance chain of an indicator: which data source it comes from (ERA5/GPM/OSTIA), which sensor observed it, and through what steps it was derived. Use for 'what is the data source of t2m_anomaly_c'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -230,7 +230,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "detect_extreme_events",
-            "description": "运行极端事件检测引擎，分析历史日期的灾害事件。基于ERA5再分析数据(indicators/目录)。适用于'2025-08-19发生了什么'等回顾分析。",
+            "description": "Run the extreme event detection engine on historical dates using ERA5 reanalysis data. Use for retrospective analysis like 'what happened on 2025-08-19'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -253,7 +253,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "detect_future_events",
-            "description": "基于 ECMWF IFS 全球预报(0.25°)检测未来几天的极端灾害风险。IFS 有完整大气变量覆盖全部四种灾害。适用于'明天会有山洪吗''未来3天利雅得会有极端高温吗'等预报问题。",
+            "description": "Detect extreme hazard risks for upcoming days using ECMWF IFS global forecasts (0.25°). IFS has complete atmospheric variable coverage for all four hazard types. Use for 'will there be flash floods tomorrow' or 'extreme heat in Riyadh in the next 3 days'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -283,7 +283,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "detect_forecast_sequence",
-            "description": "批量检测未来连续多天的灾害风险趋势。一次调用返回1-7天的逐日检测结果和趋势分析，避免多次调用。适用于'未来72小时趋势''本周风险变化'等问题。",
+            "description": "Batch-detect hazard risk trends across consecutive days. Returns daily results and trend analysis for 1-7 days in a single call. Use for '72-hour trend' or 'risk changes this week'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -309,7 +309,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_city_weather",
-            "description": "获取指定城市在指定预报日的所有气象指标格点值。根据城市坐标找到最近的IFS网格点，返回温度、湿度、风、降水等可用指标的实际数值。适用于'利雅得今天多少度''吉达的湿度是多少'等问题。",
+            "description": "Get all meteorological indicator values at the nearest IFS grid point to a specified city. Returns actual numeric values for temperature, humidity, wind, precipitation, etc. Use for 'what is the temperature in Riyadh today'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -328,7 +328,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "lookup_city",
-            "description": "根据城市名称查找沙特城市的经纬度坐标和所属区域。支持中文名（吉达、利雅得）和英文名（Jeddah、Riyadh）。适用于'利雅得今天的天气怎么样'等需要城市定位的问题。",
+            "description": "Look up latitude, longitude, and region for Saudi cities by name. Supports Chinese (吉达、利雅得), English (Jeddah, Riyadh), and Arabic (جدة, الرياض) names.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -346,7 +346,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "detect_composite_risk",
-            "description": "检测指定日期的复合灾害叠加风险。同时运行四种灾害检测，计算多灾种叠加评分和热点空间重叠度。适用于'有没有复合灾害风险''高温和沙尘会不会同时来'等问题。",
+            "description": "Detect composite multi-hazard risk for a forecast day. Runs all four hazard detections simultaneously, computes composite scores and hotspot spatial overlap. Use for 'is there compound risk' or 'will heat and dust coincide'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -364,7 +364,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "compare_with_history",
-            "description": "将当前 IFS 预报的灾害风险与2025年同期历史检测结果进行对比，评估今年相对于去年的异常程度。适用于'比去年热吗''今年沙尘风险是不是更高'等问题。",
+            "description": "Compare current IFS forecast hazard risks with 2025 same-date historical detection results. Assess anomaly relative to last year. Use for 'is it hotter than last year' or 'is dust risk higher this year'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -387,7 +387,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_knowledge_base",
-            "description": "搜索 MAZU 知识库，检索气象指标的物理定义、检测规则条件、沙特气候特征、模型局限性等技术知识。返回相关文档片段及来源。适用于'这个指标是什么意思''检测规则的条件权重是多少''沙特沙漠气候有什么特征'等需要查阅文档的问题。",
+            "description": "Search the MAZU knowledge base (RAG) for technical knowledge about meteorological indicator definitions, detection rule conditions, Saudi climate characteristics, and model limitations. Returns relevant document excerpts with sources. Use for 'what does this indicator mean' or 'Saudi desert climate features'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -412,7 +412,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "detect_ifs_forecast",
-            "description": "基于 ECMWF IFS 全球预报(0.25deg)检测未来灾害风险。IFS有完整大气变量覆盖全部四种灾害。",
+            "description": "Detect future hazard risks using ECMWF IFS global forecasts (0.25°). IFS covers all four hazard types with complete atmospheric variables.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -433,7 +433,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_ifs_dates",
-            "description": "列出所有可用的 IFS 预报日期(aifs_forecasts/目录)。",
+            "description": "List all available IFS forecast dates from the aifs_forecasts/ directory.",
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
@@ -441,7 +441,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_city_hazards",
-            "description": "【城市天气查询首选】基于 IFS 预报对指定城市进行格点级灾害检测，返回四类灾害的严重度和逐条件判定结果。直接给出权威检测结论。当用户问某个城市今天天气或有没有灾害风险时，应优先调用此工具而非 get_city_weather。",
+            "description": "[City hazard detection] Run grid-point-level hazard detection for a specified city using IFS forecasts. Returns severity and per-condition results for all four hazard types. Use this (not get_city_weather) when users ask about city weather or hazard risks.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -462,7 +462,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_calibrated_city_hazards",
-            "description": "【KG增强版城市灾害查询 - 推荐首选】基于IFS预报检测城市灾害风险，并用KG历史事件目录校准置信度。返回四类灾害的严重度+历史基准触发率+校准置信度(high/medium/low)。比get_city_hazards多一层KG历史验证。当用户问城市天气或灾害风险时优先使用此工具。",
+            "description": "[KG-CALIBRATED City Hazards — RECOMMENDED PRIMARY TOOL] IFS-based city hazard detection with KG historical event catalog calibration. Returns severity + historical_base_rate + severity_percentile + calibrated_confidence (high/medium/low) for all four hazard types. Always prefer this over get_city_hazards.",
             "parameters": {
                 "type": "object",
                 "properties": {

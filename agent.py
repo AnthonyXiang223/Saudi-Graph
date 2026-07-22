@@ -1,11 +1,11 @@
 """
-MAZU Agent — 沙特极端天气预警助手
+MAZU Agent — Saudi Multi-Hazard Early Warning Assistant
 DeepSeek-V3 + KWG KG Tool Calling
 
 Setup:
-    1. 复制 .env.example 为 .env，填入你的 DeepSeek API key
-    2. python agent.py          → 命令行模式
-    3. streamlit run app.py     → Web 界面
+    1. Copy .env.example to .env and fill in your DeepSeek API key
+    2. python agent.py          → CLI mode
+    3. streamlit run app.py     → Web UI
 """
 
 import json
@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("mazu.agent")
 
-# ── 加载 API key ──
+# ── Load API key ──
 if os.path.exists(".env"):
     with open(".env") as f:
         for line in f:
@@ -35,11 +35,11 @@ if os.path.exists(".env"):
 
 API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 if not API_KEY:
-    print("请设置 DEEPSEEK_API_KEY 环境变量")
-    print("方式: 复制 .env.example 为 .env，填入你的 key")
+    print("Error: DEEPSEEK_API_KEY not set")
+    print("Copy .env.example to .env and fill in your API key")
     sys.exit(1)
 
-# ── 初始化 DeepSeek 客户端 ──
+# ── Initialize DeepSeek client ──
 client = OpenAI(
     api_key=API_KEY,
     base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
@@ -66,7 +66,23 @@ def _build_system_prompt():
                 pass
     ifs_offset = max((today - ifs_init).days, 0)
 
-    return f"""你是 MAZU 多灾种早期预警系统的气象分析助手，服务沙特阿拉伯气象预警业务。
+    return f"""你是 MAZU (Multi-hazard Alert & Zonal Understanding) 多灾种早期预警系统的气象分析助手，服务沙特阿拉伯气象预警业务。
+You are the meteorological analysis assistant of the MAZU multi-hazard early warning system, serving Saudi Arabia's meteorological warning operations.
+
+══════════════════════════════════════
+语言 / Language / اللغة
+══════════════════════════════════════
+- **Automatic language detection**: Reply in the SAME language as the user's question.
+- 用户用中文提问 → 你用中文回答。User asks in Chinese → reply in Chinese.
+- User asks in English → reply in English.
+- إذا سأل المستخدم بالعربية → أجب بالعربية. User asks in Arabic → reply in Arabic.
+- For Arabic replies, format calibrated fields as:
+  "مخاطر XX (معدل الحدوث التاريخي X%، النتيجة المئوية PXX، مستوى الثقة: عالي/متوسط/منخفض)"
+- All meteorological indicator names should be translated to the reply language (Chinese → 降水, English → precipitation, Arabic → هطول الأمطار).
+- Severity levels should be translated: emergency/alert/warning/caution → 应急/警报/警告/注意 → طارئ/إنذار/تحذير/تنبيه.
+
+══════════════════════════════════════
+时间上下文
 
 ══════════════════════════════════════
 时间上下文
@@ -233,14 +249,14 @@ SYSTEM_PROMPT = _build_system_prompt()
 
 
 # ═══════════════════════════════════════════════════════
-# Agent 主循环
+# Agent main loop
 # ═══════════════════════════════════════════════════════
 
 def chat():
     print("=" * 55)
-    print("  MAZU 沙特极端天气预警助手")
-    print("  DeepSeek-V3 + KWG KG | 滑动窗口记忆")
-    print("  输入 'quit' 退出, 'tools' 查看可用工具")
+    print("  MAZU — Saudi Multi-Hazard Early Warning Agent")
+    print("  DeepSeek-V3 + KWG KG | CN/EN/AR trilingual")
+    print("  Type 'quit' to exit, 'tools' to list tools")
     print("=" * 55)
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -248,20 +264,20 @@ def chat():
 
     while True:
         try:
-            user_input = input("\n👉 你: ").strip()
+            user_input = input("\n👉 You: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n再见。")
+            print("\nGoodbye.")
             break
 
         if not user_input:
             continue
         if user_input.lower() == "quit":
-            print("再见。")
+            print("Goodbye.")
             break
         if user_input.lower() == "tools":
             for t in TOOLS:
                 print(f"  🔧 {t['function']['name']}: {t['function']['description'][:80]}")
-            print(f"  共 {len(TOOLS)} 个工具")
+            print(f"  Total: {len(TOOLS)} tools")
             continue
 
         messages.append({"role": "user", "content": user_input})
@@ -269,9 +285,9 @@ def chat():
         # ── Context window management ──
         messages = ctx.trim(messages)
 
-        # ── ReAct 循环（最多 5 轮工具调用）──
+        # ── ReAct loop (max 5 tool-calling turns) ──
         for turn in range(5):
-            log.info("[Turn %d] 开始 — 上下文 %d 条消息, ~%d tokens",
+            log.info("[Turn %d] start — %d messages, ~%d tokens",
                      turn + 1, len(messages),
                      estimate_messages_tokens(messages))
 
@@ -283,9 +299,9 @@ def chat():
             )
             msg = response.choices[0].message
 
-            # ── 模型要调用工具 ──
+            # ── LLM wants to call tools ──
             if msg.tool_calls:
-                log.info("[Turn %d] → %d 个工具调用",
+                log.info("[Turn %d] → %d tool call(s)",
                          turn + 1, len(msg.tool_calls))
 
                 messages.append(msg)
@@ -305,19 +321,19 @@ def chat():
                     log.info("[Turn %d.%d] %s → %d chars (after truncation)",
                              turn + 1, i + 1, name, len(result))
 
-            # ── 模型直接给出最终回答 ──
+            # ── LLM gives final text answer ──
             else:
-                log.info("[Turn %d] 最终回答 — %d chars",
+                log.info("[Turn %d] final answer — %d chars",
                          turn + 1, len(msg.content or ""))
                 print(f"\n🤖 Agent: {msg.content}")
                 messages.append({"role": "assistant", "content": msg.content})
                 break
 
         else:
-            # 超过 5 轮，强制总结
-            log.info("[总结] 超过 5 轮，强制请求总结")
-            print("\n🤖 Agent: 分析轮次较多，让我总结一下...")
-            messages.append({"role": "user", "content": "请基于上述工具返回的结果，给我一个简洁的总结。"})
+            # Exceeded 5 turns — force summary
+            log.info("[Summary] exceeded 5 turns, requesting forced summary")
+            print("\n🤖 Agent: Multiple rounds of analysis — let me summarize...")
+            messages.append({"role": "user", "content": "Based on the tool results above, give me a concise summary."})
             response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=messages,

@@ -196,8 +196,8 @@ class ContextManager:
             result.append({
                 "role": "system",
                 "content": (
-                    "[历史对话摘要 — 以下是对早前对话的自动压缩，"
-                    "保留关键信息供后续回答参考]\n\n" + summary
+                    "[Conversation history summary — compressed summary of earlier turns "
+                    "for context retention]\n\n" + summary
                 ),
             })
         for turn in recent_turns:
@@ -213,7 +213,7 @@ class ContextManager:
                 if summary:
                     result.append({
                         "role": "system",
-                        "content": "[历史对话摘要]\n\n" + summary,
+                        "content": "[Conversation history summary]\n\n" + summary,
                     })
                 for turn in recent_turns:
                     result.extend(turn)
@@ -292,16 +292,16 @@ class ContextManager:
                         final_answer = content[:150]
 
             if user_q:
-                lines.append(f"问: {user_q}")
+                lines.append(f"Q: {user_q}")
             if tool_names:
-                lines.append(f"  调用工具: {', '.join(tool_names[:5])}")
+                lines.append(f"  Tools: {', '.join(tool_names[:5])}")
             if final_answer:
-                lines.append(f"  结论: {final_answer}...")
+                lines.append(f"  A: {final_answer}...")
 
         if not lines:
-            return "(无历史对话)"
+            return "(No conversation history)"
 
-        return "## 历史对话摘要\n\n" + "\n".join(lines)
+        return "## Conversation History Summary\n\n" + "\n".join(lines)
 
 
 # ══════════════════════════════════════════════════════════════
