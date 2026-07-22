@@ -1,4 +1,4 @@
-# MAZU Agent — 沙特极端天气预警系统
+# MAZU Agent — Saudi Multi-Hazard Early Warning System
 # pip install -r requirements.txt
 
 # Core
@@ -14,6 +14,13 @@ xarray>=2024.0.0
 netCDF4>=1.7.0
 numpy>=1.26.0
 scipy>=1.12.0
+pandas>=2.0.0
+
+# IFS Forecast Pipeline (GRIB2 download & parse)
+cfgrib>=0.9.0
+
+# Event Catalog (Parquet I/O)
+pyarrow>=15.0.0
 
 # Web UI
 streamlit>=1.50.0
