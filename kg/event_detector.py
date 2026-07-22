@@ -329,6 +329,19 @@ class EventDetector:
         else:
             return []  # No valid conditions
 
+        # ── Coastal region filter for coastal_humid_heat ──
+        # The Copula joint prob is only physically meaningful for Red Sea / Persian Gulf
+        # coastal cells. Zero out inland scores to prevent false positives.
+        if rule.get("hazard_type") == "coastal_humid_heat":
+            coastal_mask = np.zeros((nlat, nlon), dtype=bool)
+            for i in range(nlat):
+                for j in range(nlon):
+                    la, lo = lat[i], lon[j]
+                    in_red_sea = (16 <= la <= 30) and (34 <= lo <= 42)
+                    in_gulf = (24 <= la <= 30) and (48 <= lo <= 56)
+                    coastal_mask[i, j] = in_red_sea or in_gulf
+            risk_score[~coastal_mask] = 0.0
+
         # Step 4: Threshold for binary mask
         # Use the SECOND severity level's lower bound as minimum (skip "none" level)
         # If only one level, use its lower bound; otherwise use level[1].lo

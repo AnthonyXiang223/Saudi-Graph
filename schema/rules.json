@@ -214,10 +214,10 @@
         },
         {
           "indicator": "humid_heat_joint_prob",
-          "op": "<=", "value": 0.05,
+          "op": ">=", "value": 0.95,
           "weight": 0.30,
           "role": "probabilistic_gate",
-          "note": "湿热Copula联合概率 P=min(F_sst,F_rh,F_t2m,F_1/wind)。≤0.05时触发绕过sst门控。2025验证: 达曼6/30 joint=0.005(极端), 延布8/23 joint=0.785(全年峰值)。仅沿海格点有效。需要humid_heat_joint_climatology.nc。"
+          "note": "湿热Copula联合概率 P=min(F_sst,F_rh,F_t2m,F_1/wind)。≥0.95时触发绕过sst门控(Copula min-rank越高=四项同时极端=真正湿热事件)。2025验证: 达曼6/30联合极端、延布8/23联合峰值。仅沿海格点有效。需要humid_heat_joint_climatology.nc。阈值2026-07-21修正: 原≤0.05为方向反转bug(joint=0表示无极端,却被触发), 改为≥0.95。"
         },
         {
           "indicator": "rh2m",

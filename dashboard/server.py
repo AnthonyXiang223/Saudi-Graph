@@ -60,11 +60,11 @@ def api_sparql_summary():
 
     # Extract Saudi-specific nodes (skip DMDO internal classes/axioms + Grid/Observation nodes)
     PREFIX = "https://mazu.cma/saudi#"
-    SKIP = ["Grid/", "Observation"]
+    SKIP = ["Grid/", "Observation", "Region/", "Sensor/", "Platform/", "Procedure/", "NetCDF/"]
     for s, p, o in g.triples((None, None, None)):
         s_str = str(s)
         if PREFIX in s_str and s_str not in seen_nodes:
-            # Skip ephemeral Grid and Observation nodes
+            # Skip ephemeral Grid, Observation, and orphaned nodes (no tracked edges in REL_MAP)
             if any(x in s_str for x in SKIP):
                 continue
             seen_nodes.add(s_str)
