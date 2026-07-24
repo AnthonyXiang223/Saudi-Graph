@@ -22,7 +22,9 @@ cfgrib>=0.9.0
 # Event Catalog (Parquet I/O)
 pyarrow>=15.0.0
 
-# Web UI
+# Web API + UI Server
+fastapi>=0.115.0
+uvicorn>=0.30.0
 streamlit>=1.50.0
 
 # RAG — Knowledge Base (build_kb.py + agent_tools search_knowledge_base)

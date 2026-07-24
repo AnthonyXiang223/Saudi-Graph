@@ -46,7 +46,7 @@ python run_fcn.py --days 7
 python dashboard/server.py
 
 # 终端 2: Agent Web 界面
-streamlit run app.py
+python server.py
 ```
 
 打开 **http://127.0.0.1:8501** 开始使用。
@@ -80,7 +80,7 @@ dashboard/                       # Web 服务
 
 agent.py                         # DeepSeek-V3 Agent (CLI)
 agent_tools.py                   # 15 个 Function Calling 工具 + FCN 预报引擎
-app.py                           # Streamlit Web 界面
+server.py                        # FastAPI Web UI + API 服务
 run_fcn.py                       # FourCastNet 预报脚本 (WSL2)
 learn_weights.py                 # L1 逻辑回归权重学习
 ```

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAZU — Saudi Multi-Hazard Early Warning</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">MAZU</div>
+    <div class="sidebar-sub" data-en="Saudi Multi-Hazard Early Warning" data-ar="نظام الإنذار المبكر متعدد المخاطر"></div>
+
+    <div class="sidebar-section" data-en="NAVIGATION" data-ar="التنقل"></div>
+    <button class="sidebar-btn active" data-tab="overview" data-en="Overview" data-ar="نظرة عامة"></button>
+    <button class="sidebar-btn" data-tab="heat" data-en="Extreme Heat" data-ar="حرارة شديدة"></button>
+    <button class="sidebar-btn" data-tab="dust" data-en="Dust Storm" data-ar="عاصفة غبارية"></button>
+    <button class="sidebar-btn" data-tab="flood" data-en="Flash Flood" data-ar="سيول مفاجئة"></button>
+    <button class="sidebar-btn" data-tab="humid" data-en="Coastal Humid Heat" data-ar="حرارة ساحلية رطبة"></button>
+    <button class="sidebar-btn" data-tab="chat" data-en="AI Assistant" data-ar="المساعد الذكي"></button>
+
+    <div style="flex:1"></div>
+
+    <div class="sidebar-section" data-en="SERVICE STATUS" data-ar="حالة الخدمة"></div>
+    <div class="sidebar-status online" id="status-kg"><span class="status-dot online"></span> <span data-en="KG · Online" data-ar="الرسم البياني · متصل"></span></div>
+    <div class="sidebar-status online" id="status-agent"><span class="status-dot online"></span> <span data-en="Agent · Online" data-ar="الوكيل · متصل"></span></div>
+
+    <div style="display:flex;gap:4px;margin-top:8px">
+      <button class="sidebar-btn" style="flex:1;text-align:center" onclick="setLang('en')" id="btn-en">EN</button>
+      <button class="sidebar-btn" style="flex:1;text-align:center" onclick="setLang('ar')" id="btn-ar">AR</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Header -->
+    <div class="page-header">
+      <h1 data-en="Saudi Multi-Hazard Early Warning Platform" data-ar="منصة الإنذار المبكر متعدد المخاطر في السعودية"></h1>
+      <p data-en="Real-time hazard detection powered by ECMWF IFS forecasts, probabilistic gating, and KG historical calibration."
+         data-ar="كشف فوري للمخاطر باستخدام توقعات ECMWF IFS والبوابات الاحتمالية والمعايرة التاريخية."></p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="tab-bar">
+      <button class="tab-btn active" data-tab="overview" data-en="Overview" data-ar="نظرة عامة"></button>
+      <button class="tab-btn" data-tab="heat" data-en="Extreme Heat" data-ar="حرارة شديدة"></button>
+      <button class="tab-btn" data-tab="dust" data-en="Dust Storm" data-ar="عاصفة غبارية"></button>
+      <button class="tab-btn" data-tab="flood" data-en="Flash Flood" data-ar="سيول مفاجئة"></button>
+      <button class="tab-btn" data-tab="humid" data-en="Coastal Humid Heat" data-ar="حرارة ساحلية رطبة"></button>
+      <button class="tab-btn" data-tab="chat" data-en="AI Assistant" data-ar="المساعد الذكي"></button>
+    </div>
+
+    <!-- ===== Overview Tab ===== -->
+    <div class="tab-content" id="tab-overview">
+      <div class="stats-row">
+        <div class="stat-tile"><div class="stat-label" data-en="Last Detection" data-ar="آخر كشف"></div><div class="stat-value" id="stat-time">--:--</div><div class="stat-delta" data-en="Ready" data-ar="جاهز"></div></div>
+        <div class="stat-tile"><div class="stat-label" data-en="Active Hazards" data-ar="المخاطر النشطة"></div><div class="stat-value" id="stat-hazards">0</div><div class="stat-delta" id="stat-hazards-delta"></div></div>
+        <div class="stat-tile"><div class="stat-label" data-en="Highest Severity" data-ar="أعلى شدة"></div><div class="stat-value" id="stat-severity">--</div><div class="stat-delta"></div></div>
+        <div class="stat-tile"><div class="stat-label" data-en="KG Confidence" data-ar="ثقة المعايرة"></div><div class="stat-value" id="stat-confidence">--</div><div class="stat-delta"></div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3 data-en="Quick City Lookup" data-ar="بحث سريع عن مدينة"></h3></div>
+        <div class="region-pills" id="region-pills"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input type="text" id="city-input" placeholder="City name (e.g. Riyadh, Jeddah, Dammam)" style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radiusSm);font-size:0.88rem;outline:none">
+          <button onclick="runCityDetection()" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:var(--radiusSm);font-weight:600;cursor:pointer;font-size:0.85rem" data-en="Detect" data-ar="كشف"></button>
+        </div>
+      </div>
+
+      <div id="overview-results"></div>
+    </div>
+
+    <!-- ===== Hazard Tabs ===== -->
+    <div class="tab-content" id="tab-heat" style="display:none">
+      <div class="stats-row" id="stats-heat"></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3 data-en="City Detection" data-ar="كشف المدينة"></h3></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="city-heat" placeholder="Riyadh, Dammam..." style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radiusSm);font-size:0.88rem;outline:none">
+          <button onclick="runHazardDetect('extreme_heat', 'city-heat', 'result-heat')" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:var(--radiusSm);font-weight:600;cursor:pointer;font-size:0.85rem" data-en="Detect" data-ar="كشف"></button>
+        </div>
+      </div>
+      <div id="result-heat"></div>
+    </div>
+
+    <div class="tab-content" id="tab-dust" style="display:none">
+      <div class="stats-row" id="stats-dust"></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3 data-en="City Detection" data-ar="كشف المدينة"></h3></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="city-dust" placeholder="Dammam, Jubail..." style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radiusSm);font-size:0.88rem;outline:none">
+          <button onclick="runHazardDetect('dust_storm', 'city-dust', 'result-dust')" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:var(--radiusSm);font-weight:600;cursor:pointer;font-size:0.85rem" data-en="Detect" data-ar="كشف"></button>
+        </div>
+      </div>
+      <div id="result-dust"></div>
+    </div>
+
+    <div class="tab-content" id="tab-flood" style="display:none">
+      <div class="stats-row" id="stats-flood"></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3 data-en="City Detection" data-ar="كشف المدينة"></h3></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="city-flood" placeholder="Jeddah, Abha..." style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radiusSm);font-size:0.88rem;outline:none">
+          <button onclick="runHazardDetect('flash_flood', 'city-flood', 'result-flood')" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:var(--radiusSm);font-weight:600;cursor:pointer;font-size:0.85rem" data-en="Detect" data-ar="كشف"></button>
+        </div>
+      </div>
+      <div id="result-flood"></div>
+    </div>
+
+    <div class="tab-content" id="tab-humid" style="display:none">
+      <div class="stats-row" id="stats-humid"></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3 data-en="City Detection" data-ar="كشف المدينة"></h3></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="city-humid" placeholder="Jeddah, Dammam..." style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radiusSm);font-size:0.88rem;outline:none">
+          <button onclick="runHazardDetect('coastal_humid_heat', 'city-humid', 'result-humid')" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:var(--radiusSm);font-weight:600;cursor:pointer;font-size:0.85rem" data-en="Detect" data-ar="كشف"></button>
+        </div>
+      </div>
+      <div id="result-humid"></div>
+    </div>
+
+    <!-- ===== Chat Tab ===== -->
+    <div class="tab-content" id="tab-chat" style="display:none">
+      <div class="quick-prompts" id="quick-prompts"></div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="chat-container">
+          <div class="chat-history" id="chat-history"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="Ask about Saudi weather hazards..." onkeydown="if(event.key==='Enter')sendChat()">
+            <button onclick="sendChat()" data-en="Send" data-ar="إرسال"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
